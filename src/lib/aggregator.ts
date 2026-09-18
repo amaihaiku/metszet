@@ -10,6 +10,7 @@ import type {
   ConfidenceLevel,
   ConfidenceStatus,
   DailyConsensusSummary,
+  FrontEffect,
   HourlyConsensusPoint,
   ModelDataPoint,
   ModelPeriodSummary,
@@ -585,6 +586,9 @@ export function calculateModelPeriodSummary(
  */
 export function calculateMoonPhase(date: Date = new Date()): {
   phase: number;
+  percentage: number;
+  trend: '↑' | '↓';
+  glyph: string;
   name: string;
   iconName: string;
 } {
@@ -593,39 +597,143 @@ export function calculateMoonPhase(date: Date = new Date()): {
   const diff = (date.getTime() - knownNewMoon) % lunarCycle;
   const phase = (diff < 0 ? diff + lunarCycle : diff) / lunarCycle;
 
+  // Illumination percentage (0% at new moon, 100% at full moon)
+  const percentage = Math.round(
+    phase <= 0.5 ? phase * 200 : (1 - phase) * 200
+  );
+
+  // Trend direction: waxing (↑) up to full moon (phase <= 0.5), waning (↓) afterwards
+  const trend: '↑' | '↓' = phase <= 0.5 ? '↑' : '↓';
+
   let name: string;
+  let glyph: string;
   let iconName: string;
 
   if (phase < 0.03 || phase >= 0.97) {
     name = 'Újhold';
+    glyph = '🌑';
     iconName = 'Circle';
   } else if (phase < 0.22) {
     name = 'Növekvő sarló';
+    glyph = '🌒';
     iconName = 'Moon';
   } else if (phase < 0.28) {
     name = 'Első negyed';
+    glyph = '🌓';
     iconName = 'Moon';
   } else if (phase < 0.47) {
     name = 'Növekvő hold';
+    glyph = '🌔';
     iconName = 'Moon';
   } else if (phase < 0.53) {
     name = 'Telihold';
+    glyph = '🌕';
     iconName = 'Sun';
   } else if (phase < 0.72) {
     name = 'Fogyó hold';
+    glyph = '🌖';
     iconName = 'Moon';
   } else if (phase < 0.78) {
     name = 'Utolsó negyed';
+    glyph = '🌗';
     iconName = 'Moon';
   } else {
     name = 'Fogyó sarló';
+    glyph = '🌘';
     iconName = 'Moon';
   }
 
   return {
     phase: Number(phase.toFixed(2)),
+    percentage,
+    trend,
+    glyph,
     name,
     iconName,
+  };
+}
+
+/**
+ * Biometeorological Front Effect (Fronthatás) Calculator
+ * Analyzes barometric pressure trends (ΔP over 6h), temperature shifts, and variance.
+ *
+ * Fronts:
+ * - Cold front (❄️): ΔP > +1.5 hPa or sharp temperature plunge
+ * - Warm front (🔥): ΔP < -1.5 hPa or sharp temperature surge
+ * - Mixed/Double front (❄️🔥): volatile pressure with high model variance (σ > 2.0°C)
+ * - None (—): steady barometric field (|ΔP| <= 1.0 hPa)
+ */
+export function calculateFrontEffect(
+  hourlyPoints: HourlyConsensusPoint[],
+  targetIndex: number = 0
+): FrontEffect {
+  if (hourlyPoints.length === 0) {
+    return {
+      type: 'none',
+      icon: '—',
+      label: 'Nincs fronthatás',
+      severity: 'mild',
+      deltaPressure6h: 0,
+    };
+  }
+
+  const currentPt = hourlyPoints[targetIndex] || hourlyPoints[0]!;
+
+  // Determine a 6-hour evaluation window centered around targetIndex if possible
+  const startIdx = Math.max(0, Math.min(hourlyPoints.length - 7, Math.max(0, targetIndex - 3)));
+  const endIdx = Math.min(hourlyPoints.length - 1, startIdx + 6);
+
+  const startPressure =
+    hourlyPoints[startIdx]?.weightedPressure ?? currentPt.weightedPressure ?? 1013.25;
+  const endPressure =
+    hourlyPoints[endIdx]?.weightedPressure ?? currentPt.weightedPressure ?? 1013.25;
+  const deltaP = Number((endPressure - startPressure).toFixed(1));
+
+  const startTemp =
+    hourlyPoints[startIdx]?.weightedTemperature ?? currentPt.weightedTemperature;
+  const endTemp =
+    hourlyPoints[endIdx]?.weightedTemperature ?? currentPt.weightedTemperature;
+  const deltaT = Number((endTemp - startTemp).toFixed(1));
+
+  // High model spread/variance often marks an occluded or complex frontal zone
+  const isVolatile = currentPt.stdDev > 2.0 || currentPt.tempSpread > 4.0;
+
+  if (isVolatile && Math.abs(deltaP) >= 1.0) {
+    return {
+      type: 'mixed',
+      icon: '❄️🔥',
+      label: 'Kettős front',
+      severity: Math.abs(deltaP) > 2.5 ? 'strong' : 'moderate',
+      deltaPressure6h: deltaP,
+    };
+  }
+
+  if (deltaP >= 1.5 || (deltaP >= 0.8 && deltaT <= -3.0)) {
+    return {
+      type: 'cold',
+      icon: '❄️',
+      label: 'Hidegfront',
+      severity: deltaP > 2.5 ? 'strong' : 'moderate',
+      deltaPressure6h: deltaP,
+    };
+  }
+
+  if (deltaP <= -1.5 || (deltaP <= -0.8 && deltaT >= 3.0)) {
+    return {
+      type: 'warm',
+      icon: '🔥',
+      label: 'Melegfront',
+      severity: deltaP < -2.5 ? 'strong' : 'moderate',
+      deltaPressure6h: deltaP,
+    };
+  }
+
+  return {
+    type: 'none',
+    icon: '—',
+    label: 'Nincs fronthatás',
+    severity: 'mild',
+    deltaPressure6h: deltaP,
   };
 }
 
@@ -676,11 +784,13 @@ export function aggregateForecast(
   }
 
   const moonPhase = calculateMoonPhase(new Date());
+  const frontEffect = calculateFrontEffect(hourly, currentHourIndex);
 
   const astronomy: AstronomyInfo = {
     sunrise: sunriseStr,
     sunset: sunsetStr,
     moonPhase,
+    frontEffect,
   };
 
   // Extract timestamp for measurement

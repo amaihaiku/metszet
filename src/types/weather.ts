@@ -311,14 +311,28 @@ export interface ModelPeriodSummary {
   currentWeatherCode?: number;
 }
 
+export type FrontType = 'cold' | 'warm' | 'mixed' | 'none';
+
+export interface FrontEffect {
+  type: FrontType;
+  icon: string; // '❄️' | '🔥' | '❄️🔥' | '—'
+  label: string; // 'Hidegfront' | 'Melegfront' | 'Kettős front' | 'Nincs fronthatás'
+  severity: 'mild' | 'moderate' | 'strong';
+  deltaPressure6h: number;
+}
+
 export interface AstronomyInfo {
   sunrise: string;
   sunset: string;
   moonPhase: {
     phase: number;
+    percentage: number;
+    trend: '↑' | '↓';
+    glyph: string;
     name: string;
     iconName: string;
   };
+  frontEffect?: FrontEffect;
 }
 
 export interface StationMetadata {

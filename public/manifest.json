@@ -1,6 +1,6 @@
 {
-  "name": "OmniForecast",
-  "short_name": "OmniForecast",
+  "name": "Metszet",
+  "short_name": "Metszet",
   "description": "Meteorológiai konszenzus és bizonytalansági előrejelzés",
   "start_url": "./",
   "scope": "./",

@@ -3,7 +3,7 @@
  */
 
 export const HU_TEXTS = {
-  appTitle: 'OmniForecast',
+  appTitle: 'Metszet',
   footer: '2026 AmaihAIku',
 
   // Time Horizons
@@ -46,7 +46,7 @@ export const HU_TEXTS = {
   // Orientation Lockout
   orientationTitle: 'Kérjük, fordítsd álló helyzetbe!',
   orientationDesc:
-    'Az OmniForecast optimális megtekintéséhez kérjük, tartsd a készüléked álló (portrait) tájolásban.',
+    'A Metszet optimális megtekintéséhez kérjük, tartsd a készüléked álló (portrait) tájolásban.',
 
   // Sources View
   sourcesTitle: 'Időjárás-modell Források',

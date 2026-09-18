@@ -111,7 +111,7 @@ export function App() {
         <div className="flex items-center gap-3">
           <img
             src={appIcon}
-            alt="OmniForecast Icon"
+            alt="Metszet Icon"
             className="w-[50px] h-[50px] sm:w-[56px] sm:h-[56px] object-contain shrink-0"
           />
           <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 m-0 leading-none">
@@ -153,6 +153,7 @@ export function App() {
             onBack={() => setShowSources(false)}
             locationName={selectedLocation.name}
             currentHourIndex={currentHourIndex}
+            astronomy={astronomy}
           />
         ) : (
           /* Primary Summary Dashboard (Single Viewport) */
@@ -212,13 +213,18 @@ export function App() {
             <div className="w-full pt-1 shrink-0">
               <button
                 type="button"
-                onClick={() => setShowSources(true)}
+                onClick={() => {
+                  if (horizon === 'most') {
+                    setHorizon('24h');
+                  }
+                  setShowSources(true);
+                }}
                 className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300 text-slate-700 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:shadow transition-all group cursor-pointer"
               >
                 <Layers className="w-4 h-4 text-sky-600 transition-transform group-hover:scale-105" />
                 <span className="font-semibold text-slate-800">{HU_TEXTS.sourcesButton}</span>
                 <span className="text-slate-400 font-normal text-xs">
-                  ({horizon === 'most' ? '4 modell valós idejű adatai' : `4 modell ${horizon} adatai`})
+                  ({horizon === 'most' ? '4 modell 24h adatai' : `4 modell ${horizon} adatai`})
                 </span>
               </button>
             </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type {
   AstronomyInfo,
@@ -11,7 +11,10 @@ import {
   connectOmniGroup,
   getConsensusChartOption,
   formatTimeLabel,
+  formatFullDateTime,
 } from '../../lib/echartsOptions';
+import { calculateFrontEffect } from '../../lib/aggregator';
+import { AstroFrontStrip } from '../Common/AstroFrontStrip';
 import { WeatherIcon } from '../Common/WeatherIcon';
 import {
   Thermometer,
@@ -20,9 +23,6 @@ import {
   Gauge,
   Activity,
   MapPin,
-  Sunrise,
-  Sunset,
-  Moon,
   Clock,
   Radio,
   Compass,
@@ -51,6 +51,16 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   astronomy,
   stationMetadata,
 }) => {
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [prevHorizon, setPrevHorizon] = useState<string>(horizon);
+  const chartRef = useRef<ReactECharts | null>(null);
+
+  // Reset selected hour when horizon changes
+  if (prevHorizon !== horizon) {
+    setPrevHorizon(horizon);
+    setSelectedIndex(0);
+  }
+
   if (hourlyPoints.length === 0) {
     return (
       <div className="clean-card p-6 text-center text-slate-500">
@@ -68,11 +78,14 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   // --------------------------------------------------------------------------
   if (isMost) {
     return (
-      <div className="clean-card p-4 sm:p-5 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden">
+      <div className="clean-card p-3 sm:p-4 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden gap-2">
+        {/* Top Info Strip: Astro & Biometeorology (Sunrise, Sunset, Moon, Front) - strictly icon + value */}
+        <AstroFrontStrip astronomy={astronomy} />
+
         {/* Top Hero: Current Temperature & Real-Time Verified Tag */}
-        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-100">
           <div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-1">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-0.5">
               <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
               <span className="font-semibold text-slate-900">{locationName}</span>
               <span className="text-slate-300">•</span>
@@ -80,7 +93,7 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             </div>
 
             <div className="flex items-baseline gap-3">
-              <span className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
+              <span className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight tabular-nums">
                 {current.weightedTemperature.toFixed(1)}°C
               </span>
               <div className="flex flex-col">
@@ -98,17 +111,17 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
           </div>
 
           {/* Verified Measurement Badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-2xs shrink-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-2xs shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="hidden xs:inline">Valós idejű</span> tényadatok
           </div>
         </div>
 
         {/* 2x2 Spacious Real-Time Metrics Grid */}
-        <div className="grid grid-cols-2 gap-3 my-auto py-2">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 my-auto py-1">
           {/* Card 1: Hőmérséklet */}
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
-            <div className="flex items-center justify-between text-slate-500 mb-1">
+          <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
+            <div className="flex items-center justify-between text-slate-500 mb-0.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Hőmérséklet
               </span>
@@ -117,15 +130,15 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
               {current.weightedTemperature.toFixed(1)} °C
             </div>
-            <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <Activity className="w-3 h-3 text-indigo-500" />
-              <span>Modellek szórása: ±{(current.tempSpread / 2).toFixed(1)}°C (σ={current.stdDev.toFixed(2)}°)</span>
+            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+              <Activity className="w-3 h-3 text-indigo-500 shrink-0" />
+              <span className="truncate">Modellek szórása: ±{(current.tempSpread / 2).toFixed(1)}° (σ={current.stdDev.toFixed(2)}°)</span>
             </div>
           </div>
 
           {/* Card 2: Csapadék */}
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
-            <div className="flex items-center justify-between text-slate-500 mb-1">
+          <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
+            <div className="flex items-center justify-between text-slate-500 mb-0.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
                 Csapadék
               </span>
@@ -134,27 +147,27 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
               {current.precipitationAmount.toFixed(1)} mm
             </div>
-            <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <span>Relatív páratartalom:</span>
+            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+              <span>Páratartalom:</span>
               <strong className="text-slate-700">{stationMetadata?.humidity ?? 36}%</strong>
             </div>
           </div>
 
           {/* Card 3: Szélsebesség & Irány */}
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
-            <div className="flex items-center justify-between text-slate-500 mb-1">
+          <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
+            <div className="flex items-center justify-between text-slate-500 mb-0.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                Szélsebesség & Irány
+                Szél & Irány
               </span>
               <Wind className="w-4 h-4 text-teal-600" />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
               {Math.round(current.weightedWindSpeed)} km/h
             </div>
-            <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <Compass className="w-3 h-3 text-teal-600" />
+            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+              <Compass className="w-3 h-3 text-teal-600 shrink-0" />
               <span>Irány:</span>
-              <strong className="text-slate-800">
+              <strong className="text-slate-800 truncate">
                 {stationMetadata?.windDirectionCompass || 'ÉNy'}
                 {stationMetadata?.windDirectionDeg !== undefined && ` (${stationMetadata.windDirectionDeg}°)`}
               </strong>
@@ -162,56 +175,56 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
           </div>
 
           {/* Card 4: Légnyomás */}
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
-            <div className="flex items-center justify-between text-slate-500 mb-1">
+          <div className="p-3 sm:p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex flex-col justify-between shadow-2xs">
+            <div className="flex items-center justify-between text-slate-500 mb-0.5">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                Felszíni Légnyomás
+                Légnyomás
               </span>
               <Gauge className="w-4 h-4 text-indigo-600" />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">
               {current.weightedPressure ? Math.round(current.weightedPressure) : 1013} hPa
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              <span>Átszámított tengerszinti légnyomás</span>
+            <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+              <span>Tengerszinti légnyomás</span>
             </div>
           </div>
         </div>
 
         {/* Station Metadata & Authentication Panel at Bottom */}
-        <div className="pt-3 border-t border-slate-100 bg-slate-50/50 -mx-4 -mb-4 sm:-mx-5 sm:-mb-5 p-3 sm:p-4 rounded-b-2xl">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="pt-2 border-t border-slate-100 bg-slate-50/50 -mx-3 -mb-3 sm:-mx-4 sm:-mb-4 p-2.5 sm:p-3 rounded-b-2xl">
+          <div className="flex items-center gap-1.5 mb-1.5">
             <Radio className="w-3.5 h-3.5 text-emerald-600" />
-            <h4 className="text-xs font-bold text-slate-800">Mérőállomás és hitelesítési adatok</h4>
+            <h4 className="text-[11px] font-bold text-slate-800">Mérőállomás és hitelesítési adatok</h4>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
               <div className="text-[10px] font-semibold uppercase text-slate-400">Mérés forrása</div>
               <div className="font-bold text-slate-800 text-xs mt-0.5 flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                <span>{stationMetadata?.source || 'DWD / HungaroMet / ECMWF mérőhálózat'}</span>
+                <span className="truncate">{stationMetadata?.source || 'DWD / HungaroMet / ECMWF'}</span>
               </div>
             </div>
 
-            <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-              <div className="text-[10px] font-semibold uppercase text-slate-400">Mérőállomás helyszíne</div>
+            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
+              <div className="text-[10px] font-semibold uppercase text-slate-400">Állomás helye</div>
               <div className="font-bold text-slate-800 text-xs mt-0.5 truncate">
                 {stationMetadata?.stationName || `${locationName} automata állomás`}
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">
-                {stationMetadata?.coordinates || '47.50°É, 19.04°K'} • {stationMetadata?.elevation || 113} m tszf.
+              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                {stationMetadata?.coordinates || '47.50°É, 19.04°K'} • {stationMetadata?.elevation || 113} m
               </div>
             </div>
 
-            <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
               <div className="text-[10px] font-semibold uppercase text-slate-400">Pontos mérésidő</div>
               <div className="font-bold text-slate-800 text-xs mt-0.5 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                 <span className="text-sm font-extrabold text-slate-900 tabular-nums">
                   {stationMetadata?.timestamp || '16:15'}
                 </span>
-                <span className="text-[11px] text-slate-500 font-normal">óra (helyi idő)</span>
+                <span className="text-[11px] text-slate-500 font-normal">óra</span>
               </div>
             </div>
           </div>
@@ -221,12 +234,18 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   }
 
   // --------------------------------------------------------------------------
-  // 2. "24h" & "72h" FORECAST VIEWS: Elevated Chart, Astronomy Row, 2x2 Grid, Taller Timeline
+  // 2. "24h" & "72h" FORECAST VIEWS: Interactive Scrub Chart, Dynamic Cards, Hourly Chips
   // --------------------------------------------------------------------------
   const filteredPoints =
     horizon === '24h'
       ? hourlyPoints.slice(currentHourIndex, currentHourIndex + 24)
       : hourlyPoints.slice(currentHourIndex, currentHourIndex + 72);
+
+  // Selected hour point & dynamic front effect
+  const activeIndex = Math.min(selectedIndex, Math.max(0, filteredPoints.length - 1));
+  const selectedPt = filteredPoints[activeIndex] || filteredPoints[0]!;
+  const selectedGlobalIdx = currentHourIndex + activeIndex;
+  const dynamicFront = calculateFrontEffect(hourlyPoints, selectedGlobalIdx);
 
   // Series arrays for ECharts
   const timestamps = filteredPoints.map((p) => p.time);
@@ -242,66 +261,22 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
     tempMins,
     tempMaxs,
     rainMedians,
-    confidenceScores
+    confidenceScores,
+    selectedPt.time
   );
-
-  const periodTempMin = Math.min(...filteredPoints.map((p) => p.tempMin));
-  const periodTempMax = Math.max(...filteredPoints.map((p) => p.tempMax));
-  const periodTempAvg =
-    filteredPoints.reduce((acc, p) => acc + p.weightedTemperature, 0) /
-    (filteredPoints.length || 1);
-  const periodTotalRain = filteredPoints.reduce(
-    (acc, p) => acc + p.precipitationAmount,
-    0
-  );
-  const periodMaxRainProb = Math.max(
-    ...filteredPoints.map((p) => p.precipitationProbability),
-    0
-  );
-  const periodMaxWind = Math.max(
-    ...filteredPoints.map((p) => p.weightedWindSpeed),
-    0
-  );
-  const periodAvgPressure =
-    filteredPoints.reduce((acc, p) => acc + (p.weightedPressure || 1013), 0) /
-    (filteredPoints.length || 1);
-  const periodAvgSpread =
-    filteredPoints.reduce((acc, p) => acc + p.tempSpread, 0) /
-    (filteredPoints.length || 1);
-  const periodAvgStdDev =
-    filteredPoints.reduce((acc, p) => acc + p.stdDev, 0) /
-    (filteredPoints.length || 1);
 
   return (
-    <div className="clean-card p-3 sm:p-4 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden">
-      {/* 1. Above Chart: Compact, Elegant Astronomy Row (Sunrise, Sunset, Moon Phase) ONLY */}
-      <div className="flex items-center justify-around py-1 px-3 rounded-xl bg-slate-50/90 border border-slate-200/70 text-xs font-semibold text-slate-700 shadow-2xs">
-        <div className="flex items-center gap-1.5">
-          <Sunrise className="w-4 h-4 text-amber-500 shrink-0" />
-          <span className="text-slate-500 font-normal">Napkelte:</span>
-          <span className="text-slate-900 font-bold tabular-nums">{astronomy?.sunrise || '06:25'}</span>
-        </div>
+    <div className="clean-card p-3 sm:p-3.5 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden gap-1.5">
+      {/* 1. Above Chart: Compact Astro & Biometeorology Strip (Icon + Value Only) */}
+      <AstroFrontStrip
+        astronomy={astronomy}
+        frontEffect={dynamicFront}
+      />
 
-        <span className="text-slate-300">|</span>
-
-        <div className="flex items-center gap-1.5">
-          <Sunset className="w-4 h-4 text-orange-500 shrink-0" />
-          <span className="text-slate-500 font-normal">Napnyugta:</span>
-          <span className="text-slate-900 font-bold tabular-nums">{astronomy?.sunset || '18:50'}</span>
-        </div>
-
-        <span className="text-slate-300">|</span>
-
-        <div className="flex items-center gap-1.5">
-          <Moon className="w-4 h-4 text-indigo-500 shrink-0" />
-          <span className="text-slate-500 font-normal">Holdfázis:</span>
-          <span className="text-slate-900 font-bold">{astronomy?.moonPhase.name || 'Első negyed'}</span>
-        </div>
-      </div>
-
-      {/* 2. Elevated ECharts Trend Graph (Moved higher into the freed space) */}
-      <div className="w-full flex-1 min-h-[135px] max-h-[175px] my-1 relative">
+      {/* 2. Interactive ECharts Trend Graph (Tap/Scrub Snapping) */}
+      <div className="w-full flex-1 min-h-[135px] max-h-[175px] relative">
         <ReactECharts
+          ref={chartRef}
           option={consensusOption}
           style={{ height: '100%', width: '100%' }}
           opts={{ renderer: 'canvas' }}
@@ -310,46 +285,95 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
           onChartReady={(instance) => {
             instance.group = OMNI_GROUP;
             connectOmniGroup();
+
+            const zr = instance.getZr();
+            if (!zr) return;
+
+            const handlePointer = (offsetX: number, offsetY: number) => {
+              const pointInPixel = [offsetX, offsetY];
+              if (instance.containPixel('grid', pointInPixel)) {
+                const coord = instance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
+                if (coord && typeof coord[0] === 'number') {
+                  const idx = Math.max(0, Math.min(filteredPoints.length - 1, Math.round(coord[0])));
+                  setSelectedIndex(idx);
+                }
+              }
+            };
+
+            zr.on('click', (e: { offsetX: number; offsetY: number }) => {
+              handlePointer(e.offsetX, e.offsetY);
+            });
+
+            zr.on('mousemove', (e: { which: number; offsetX: number; offsetY: number }) => {
+              if (e.which === 1) {
+                handlePointer(e.offsetX, e.offsetY);
+              }
+            });
+          }}
+          onEvents={{
+            updateAxisPointer: (event: { dataIndex?: number; axesInfo?: Array<{ value: number }> }) => {
+              if (typeof event.dataIndex === 'number') {
+                setSelectedIndex(event.dataIndex);
+              } else if (event.axesInfo?.[0] && typeof event.axesInfo[0].value === 'number') {
+                const val = event.axesInfo[0].value;
+                if (val >= 0 && val < filteredPoints.length) {
+                  setSelectedIndex(val);
+                }
+              }
+            },
           }}
         />
       </div>
 
-      {/* 3. 2x2 Grid of Spacious Primary Metric Cards (grid-cols-2 gap-3) */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 pt-1 border-t border-slate-100 text-xs">
-        {/* Card 1: Hőmérséklet tartomány & átlag */}
-        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
+      {/* Selected Hour Timestamp Indicator Bar */}
+      <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-slate-600">
+        <span className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-sky-600" />
+          <span className="text-slate-500 font-normal">Kiválasztott óra:</span>
+          <strong className="text-slate-900 font-extrabold">{formatFullDateTime(selectedPt.time)}</strong>
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold border border-sky-200">
+          <WeatherIcon name={selectedPt.weatherIcon} className="w-3 h-3 text-sky-600" />
+          <span>{selectedPt.weatherDescription}</span>
+        </span>
+      </div>
+
+      {/* 3. 2x2 Grid of Primary Metric Cards (SYNCHRONIZED to selected hour) */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-1 border-t border-slate-100 text-xs">
+        {/* Card 1: Hőmérséklet & Modell Tartomány */}
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 truncate">
-              Hőmérséklet ({horizon})
+              Hőmérséklet
             </span>
             <Thermometer className="w-3.5 h-3.5 text-sky-600 shrink-0" />
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-slate-900 tabular-nums">
-            {periodTempMin.toFixed(0)}° - {periodTempMax.toFixed(0)} °C
+            {selectedPt.weightedTemperature.toFixed(1)} °C
           </div>
           <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            Átlagos hőmérséklet: <strong className="text-slate-700">{periodTempAvg.toFixed(1)} °C</strong>
+            Tartomány: <strong className="text-slate-700">{selectedPt.tempMin.toFixed(1)}° – {selectedPt.tempMax.toFixed(1)}°</strong>
           </div>
         </div>
 
-        {/* Card 2: Eltérés és bizonytalanság */}
-        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
+        {/* Card 2: Modell Eltérés & Konszenzus */}
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 truncate">
-              Modell eltérés (szórás)
+              Modell eltérés
             </span>
             <Activity className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-slate-900 tabular-nums">
-            ±{(periodAvgSpread / 2).toFixed(1)} °C
+            ±{(selectedPt.tempSpread / 2).toFixed(1)} °C
           </div>
           <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            Átlagos szórás: <strong className="text-slate-700">σ = {periodAvgStdDev.toFixed(2)} °C</strong>
+            Szórás: <strong className="text-slate-700">σ = {selectedPt.stdDev.toFixed(2)}°</strong> • {selectedPt.confidenceScore}%
           </div>
         </div>
 
-        {/* Card 3: Csapadék összeg és csúcs valószínűség */}
-        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
+        {/* Card 3: Várható Csapadék */}
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 truncate">
               Várható csapadék
@@ -357,15 +381,15 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <Droplets className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-slate-900 tabular-nums">
-            {periodTotalRain.toFixed(1)} mm
+            {selectedPt.precipitationAmount.toFixed(1)} mm
           </div>
           <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            Csúcs esély: <strong className="text-slate-700">{periodMaxRainProb}%</strong>
+            Csapadékesély: <strong className="text-slate-700">{selectedPt.precipitationProbability}%</strong>
           </div>
         </div>
 
-        {/* Card 4: Szélsebesség és Légnyomás */}
-        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
+        {/* Card 4: Szélsebesség & Légnyomás */}
+        <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 truncate">
               Szél & Légnyomás
@@ -376,36 +400,43 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             </div>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-slate-900 tabular-nums">
-            {Math.round(periodMaxWind)} km/h <span className="text-xs font-normal text-slate-500">max</span>
+            {Math.round(selectedPt.weightedWindSpeed)} km/h
           </div>
           <div className="text-[11px] text-slate-500 truncate mt-0.5">
-            Átlagos légnyomás: <strong className="text-slate-700">{Math.round(periodAvgPressure)} hPa</strong>
+            Légnyomás: <strong className="text-slate-700">{Math.round(selectedPt.weightedPressure)} hPa</strong>
           </div>
         </div>
       </div>
 
-      {/* 4. Taller, Highly Legible Chronological Hourly Strip */}
-      <div className="mt-2 pt-1.5 border-t border-slate-100">
+      {/* 4. Interactive Chronological Hourly Strip */}
+      <div className="mt-1 pt-1 border-t border-slate-100">
         <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1 px-1">
-          <span>Időrendi bontás ({horizon === '24h' ? 'Következő 24 óra' : 'Következő 72 óra'})</span>
-          <span className="text-[10px] text-slate-400 font-normal">Óra • Hőmérséklet • Csapadék</span>
+          <span>Időrendi bontás ({horizon === '24h' ? '24 óra' : '72 óra'})</span>
+          <span className="text-[10px] text-slate-400 font-normal">Koppints az órára a részletekért</span>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          {filteredPoints.slice(0, 16).map((pt) => {
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+          {filteredPoints.slice(0, 24).map((pt, idx) => {
+            const isSelected = idx === activeIndex;
             const timeLabel = formatTimeLabel(pt.time);
             return (
-              <div
+              <button
                 key={pt.time}
-                className="flex flex-col items-center justify-between py-2 px-2 rounded-xl bg-slate-50 border border-slate-200/70 min-w-[58px] sm:min-w-[64px] shrink-0 text-center shadow-2xs"
+                type="button"
+                onClick={() => setSelectedIndex(idx)}
+                className={`flex flex-col items-center justify-between py-1.5 px-2 rounded-xl transition-all min-w-[56px] sm:min-w-[62px] shrink-0 text-center cursor-pointer ${
+                  isSelected
+                    ? 'bg-sky-50 border-2 border-sky-500 shadow-xs scale-102'
+                    : 'bg-slate-50 border border-slate-200/70 hover:bg-slate-100/70 shadow-2xs'
+                }`}
               >
-                <span className="text-[11px] font-bold text-slate-700">
+                <span className={`text-[11px] font-bold ${isSelected ? 'text-sky-700' : 'text-slate-700'}`}>
                   {timeLabel}
                 </span>
 
                 <WeatherIcon
                   name={pt.weatherIcon}
-                  className="w-4 h-4 my-1 text-sky-600"
+                  className="w-4 h-4 my-0.5 text-sky-600"
                 />
 
                 <span className="text-xs sm:text-sm font-extrabold text-slate-900 tabular-nums">
@@ -415,7 +446,7 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
                 <span className="text-[10px] text-blue-600 font-semibold mt-0.5">
                   {pt.precipitationProbability > 0 ? `${pt.precipitationProbability}%` : '0%'}
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>

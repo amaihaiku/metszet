@@ -51,7 +51,8 @@ export function getSingleModelChartOption(
   temperatures: number[],
   rain: number[],
   modelColor: string,
-  modelName: string
+  modelName: string,
+  selectedTimestamp?: string
 ): EChartsOption {
   const validTemps = temperatures.filter((t) => Number.isFinite(t));
   const minTemp = validTemps.length > 0 ? Math.floor(Math.min(...validTemps)) - 1 : 0;
@@ -69,50 +70,15 @@ export function getSingleModelChartOption(
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(255, 255, 255, 0.98)',
-      borderColor: '#e2e8f0',
-      borderWidth: 1,
-      padding: [6, 10],
-      textStyle: {
-        color: '#0f172a',
-        fontSize: 11,
-      },
-      extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 8px;',
+      showContent: false,
       axisPointer: {
         type: 'line',
         snap: true,
         lineStyle: {
           color: modelColor,
-          type: 'dashed',
-          width: 1.5,
+          type: 'solid',
+          width: 2,
         },
-      },
-      formatter: (params: unknown) => {
-        if (!Array.isArray(params) || params.length === 0) return '';
-        const index = (params[0] as { dataIndex: number }).dataIndex;
-        const timeStr = timestamps[index] ?? '';
-        const temp = temperatures[index];
-        const precip = rain[index] ?? 0;
-
-        return `
-          <div style="font-family: system-ui, sans-serif; font-size: 11px;">
-            <div style="color: #64748b; margin-bottom: 2px; font-weight: 500;">
-              ${formatFullDateTime(timeStr)}
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px;">
-              <span style="color: ${modelColor}; font-weight: 600;">${modelName}:</span>
-              <span style="font-weight: 700; color: #0f172a;">${temp !== undefined ? temp.toFixed(1) : '--'}°C</span>
-            </div>
-            ${
-              precip > 0
-                ? `<div style="display: flex; align-items: center; justify-content: space-between; gap: 14px;">
-                     <span style="color: #0284c7;">Csapadék:</span>
-                     <span style="font-weight: 600; color: #0369a1;">${precip.toFixed(1)} mm</span>
-                   </div>`
-                : ''
-            }
-          </div>
-        `;
       },
     },
     xAxis: {
@@ -169,6 +135,20 @@ export function getSingleModelChartOption(
         symbolSize: 5,
         itemStyle: { color: modelColor },
         lineStyle: { width: 2.2, color: modelColor },
+        markLine: selectedTimestamp
+          ? {
+              symbol: 'none',
+              silent: true,
+              animation: false,
+              label: { show: false },
+              lineStyle: {
+                color: modelColor,
+                width: 2,
+                type: 'solid',
+              },
+              data: [{ xAxis: selectedTimestamp }],
+            }
+          : undefined,
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: `${modelColor}25` },
@@ -202,7 +182,8 @@ export function getConsensusChartOption(
   tempMin: number[],
   tempMax: number[],
   rainMedian: number[],
-  confidenceScores?: number[]
+  _confidenceScores?: number[],
+  selectedTimestamp?: string
 ): EChartsOption {
   const allMins = tempMin.filter((v) => Number.isFinite(v));
   const allMaxs = tempMax.filter((v) => Number.isFinite(v));
@@ -226,71 +207,15 @@ export function getConsensusChartOption(
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(255, 255, 255, 0.98)',
-      borderColor: '#e2e8f0',
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: {
-        color: '#0f172a',
-        fontSize: 11,
-      },
-      extraCssText: 'box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); border-radius: 10px;',
+      showContent: false,
       axisPointer: {
         type: 'line',
         snap: true,
         lineStyle: {
           color: '#0284c7',
-          type: 'dashed',
-          width: 1.5,
+          type: 'solid',
+          width: 2,
         },
-      },
-      formatter: (params: unknown) => {
-        if (!Array.isArray(params) || params.length === 0) return '';
-        const index = (params[0] as { dataIndex: number }).dataIndex;
-        const timeStr = timestamps[index] ?? '';
-        const consensus = weightedTemp[index] ?? 0;
-        const minT = tempMin[index] ?? 0;
-        const maxT = tempMax[index] ?? 0;
-        const spread = Math.max(0, maxT - minT);
-        const rain = rainMedian[index] ?? 0;
-        const confidence = confidenceScores ? confidenceScores[index] ?? 80 : 80;
-
-        const confColor =
-          confidence >= 85 ? '#059669' : confidence >= 70 ? '#d97706' : '#e11d48';
-        const confLabel =
-          confidence >= 85
-            ? 'Magas konszenzus'
-            : confidence >= 70
-              ? 'Mérsékelt'
-              : 'Nagy bizonytalanság';
-
-        return `
-          <div style="font-family: system-ui, sans-serif; min-width: 180px;">
-            <div style="color: #64748b; font-size: 10px; margin-bottom: 4px; border-bottom: 1px solid #f1f5f9; padding-bottom: 3px;">
-              ${formatFullDateTime(timeStr)}
-            </div>
-
-            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 3px;">
-              <span style="color: #0284c7; font-size: 11px; font-weight: 600;">Konszenzus:</span>
-              <span style="font-size: 15px; font-weight: 800; color: #0f172a;">${consensus.toFixed(1)}°C</span>
-            </div>
-
-            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #64748b; margin-bottom: 3px;">
-              <span>Tartomány (szórás):</span>
-              <span style="font-weight: 600; color: #334155;">${minT.toFixed(1)}° - ${maxT.toFixed(1)}° (${spread.toFixed(1)}°)</span>
-            </div>
-
-            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #64748b; margin-bottom: 3px;">
-              <span>Csapadék:</span>
-              <span style="font-weight: 600; color: #0284c7;">${rain.toFixed(1)} mm</span>
-            </div>
-
-            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; margin-top: 4px; padding-top: 3px; border-top: 1px solid #f1f5f9;">
-              <span style="color: #64748b;">Megbízhatóság:</span>
-              <span style="color: ${confColor}; font-weight: 700;">${confidence}% (${confLabel})</span>
-            </div>
-          </div>
-        `;
       },
     },
     xAxis: {
@@ -378,6 +303,20 @@ export function getConsensusChartOption(
             { offset: 1, color: '#7c3aed' },
           ]),
         },
+        markLine: selectedTimestamp
+          ? {
+              symbol: 'none',
+              silent: true,
+              animation: false,
+              label: { show: false },
+              lineStyle: {
+                color: '#0284c7',
+                width: 2,
+                type: 'solid',
+              },
+              data: [{ xAxis: selectedTimestamp }],
+            }
+          : undefined,
         z: 4,
       },
       {

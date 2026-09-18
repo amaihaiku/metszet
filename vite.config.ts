@@ -5,5 +5,5 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: '/omniforecast/', // A repositoryd pontos neve perjelek közé téve!
+  base: '/metszet/', // A repositoryd pontos neve perjelek közé téve!
 })
