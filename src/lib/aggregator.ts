@@ -1,0 +1,489 @@
+/**
+ * OmniForecast - Core Mathematical Consensus & Uncertainty Aggregation Engine
+ * Optimized for Hungary & Central European Meteorology
+ */
+
+import type {
+  ConfidenceInfo,
+  ConfidenceLevel,
+  ConfidenceStatus,
+  DailyConsensusSummary,
+  HourlyConsensusPoint,
+  ModelDataPoint,
+  OpenMeteoMultiModelResponse,
+  WeatherCodeDetails,
+  WeatherModel,
+} from '../types/weather';
+import { SUPPORTED_MODELS } from '../types/weather';
+import { HU_WMO_WEATHER_CODES, HU_TEXTS } from './i18n';
+
+/**
+ * 1. Model Weighting Constants
+ *
+ * Operational weights optimized for Central Europe & Hungary:
+ * - ECMWF IFS: 0.35 (Arany standard európai globális modell)
+ * - DWD ICON-EU: 0.30 (DWD ~7km felbontású Közép-Európai regionális modell)
+ * - DWD ICON: 0.20 (DWD ~13km globális modell)
+ * - Météo-France: 0.15 (Európai ARPEGE modellcsomag)
+ */
+export const MODEL_WEIGHTS: Readonly<Record<WeatherModel, number>> = {
+  ecmwf_ifs025: 0.35,
+  dwd_icon_eu: 0.3,
+  dwd_icon: 0.2,
+  meteofrance_seamless: 0.15,
+};
+
+/**
+ * Priority order for tie-breaking: ECMWF IFS first, followed by ICON-EU, ICON, Météo-France.
+ */
+const TIE_BREAK_ORDER: readonly WeatherModel[] = [
+  'ecmwf_ifs025',
+  'dwd_icon_eu',
+  'dwd_icon',
+  'meteofrance_seamless',
+];
+
+/**
+ * Dynamically re-normalizes weights across available models so the sum equals 1.0.
+ */
+export function normalizeWeights(
+  availableModels: WeatherModel[]
+): Map<WeatherModel, number> {
+  const normalized = new Map<WeatherModel, number>();
+  if (availableModels.length === 0) {
+    return normalized;
+  }
+
+  const totalRawWeight = availableModels.reduce(
+    (sum, model) => sum + (MODEL_WEIGHTS[model] ?? 0),
+    0
+  );
+
+  if (totalRawWeight <= 0) {
+    const equalWeight = 1 / availableModels.length;
+    for (const model of availableModels) {
+      normalized.set(model, equalWeight);
+    }
+    return normalized;
+  }
+
+  for (const model of availableModels) {
+    const rawWeight = MODEL_WEIGHTS[model] ?? 0;
+    normalized.set(model, rawWeight / totalRawWeight);
+  }
+
+  return normalized;
+}
+
+/**
+ * Standard deviation: sqrt( sum( (x_i - mean)^2 ) / N )
+ */
+export function calculateStdDev(values: number[]): number {
+  if (values.length <= 1) {
+    return 0;
+  }
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const variance =
+    values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Mathematical median of an array of numbers
+ */
+export function calculateMedian(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 !== 0) {
+    return sorted[mid]!;
+  }
+  return (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Classify confidence score into Hungarian status and presentation styling
+ */
+export function classifyConfidence(score: number): ConfidenceInfo {
+  const boundedScore = Math.min(100, Math.max(0, Math.round(score)));
+
+  let status: ConfidenceStatus;
+  let level: ConfidenceLevel;
+  let badgeClass: string;
+
+  if (boundedScore >= 85) {
+    status = HU_TEXTS.confidenceHigh as ConfidenceStatus;
+    level = 'high';
+    badgeClass =
+      'text-emerald-700 bg-emerald-50 border-emerald-300 dark:text-emerald-800';
+  } else if (boundedScore >= 70) {
+    status = HU_TEXTS.confidenceModerate as ConfidenceStatus;
+    level = 'moderate';
+    badgeClass =
+      'text-amber-700 bg-amber-50 border-amber-300 dark:text-amber-800';
+  } else {
+    status = HU_TEXTS.confidenceLow as ConfidenceStatus;
+    level = 'low';
+    badgeClass =
+      'text-rose-700 bg-rose-50 border-rose-300 dark:text-rose-800';
+  }
+
+  return {
+    score: boundedScore,
+    level,
+    status,
+    badgeClass,
+  };
+}
+
+/**
+ * Map WMO Weather Code to Hungarian label and Lucide icon name
+ */
+export function getWeatherCodeDetails(code: number): WeatherCodeDetails {
+  const item = HU_WMO_WEATHER_CODES[code];
+  if (item) {
+    return {
+      code,
+      label: item.label,
+      iconName: item.iconName,
+      category: item.category,
+    };
+  }
+
+  return {
+    code,
+    label: `Időjáráskód ${code}`,
+    iconName: 'Cloud',
+    category: 'cloudy',
+  };
+}
+
+/**
+ * Determine dominant weather code across reporting models.
+ * Takes the mode (most frequent WMO code). If tied, prefers ECMWF IFS.
+ */
+export function computeDominantWeatherCode(
+  modelCodes: Array<{ model: WeatherModel; code: number }>
+): number {
+  if (modelCodes.length === 0) {
+    return 0;
+  }
+
+  const frequencyMap = new Map<number, number>();
+  for (const item of modelCodes) {
+    const current = frequencyMap.get(item.code) ?? 0;
+    frequencyMap.set(item.code, current + 1);
+  }
+
+  let highestFreq = 0;
+  for (const freq of frequencyMap.values()) {
+    if (freq > highestFreq) {
+      highestFreq = freq;
+    }
+  }
+
+  const tiedCodes = Array.from(frequencyMap.entries())
+    .filter(([, freq]) => freq === highestFreq)
+    .map(([code]) => code);
+
+  if (tiedCodes.length === 1) {
+    return tiedCodes[0]!;
+  }
+
+  for (const preferredModel of TIE_BREAK_ORDER) {
+    const match = modelCodes.find(
+      (item) => item.model === preferredModel && tiedCodes.includes(item.code)
+    );
+    if (match !== undefined) {
+      return match.code;
+    }
+  }
+
+  return tiedCodes[0]!;
+}
+
+/**
+ * Safely extract number at array index
+ */
+function getValidNumber(
+  source: Record<string, (number | null)[] | string[]> | undefined,
+  key: string,
+  index: number
+): number | null {
+  if (!source || !source[key] || !Array.isArray(source[key])) {
+    return null;
+  }
+  const val = source[key]![index];
+  if (val === null || val === undefined || typeof val !== 'number' || !Number.isFinite(val)) {
+    return null;
+  }
+  return val;
+}
+
+/**
+ * Hourly Consensus Computation
+ */
+export function computeHourlyConsensus(
+  raw: OpenMeteoMultiModelResponse
+): HourlyConsensusPoint[] {
+  if (!raw.hourly || !Array.isArray(raw.hourly.time)) {
+    return [];
+  }
+
+  const times = raw.hourly.time;
+  const result: HourlyConsensusPoint[] = [];
+
+  for (let i = 0; i < times.length; i++) {
+    const time = times[i]!;
+
+    const availableModels: WeatherModel[] = [];
+    const modelPoints: Record<WeatherModel, ModelDataPoint | null> = {
+      ecmwf_ifs025: null,
+      dwd_icon_eu: null,
+      dwd_icon: null,
+      meteofrance_seamless: null,
+    };
+
+    const tempValues: number[] = [];
+    const precipValues: number[] = [];
+    const windValues: number[] = [];
+    const pressureValues: number[] = [];
+    const weatherCodes: Array<{ model: WeatherModel; code: number }> = [];
+
+    for (const model of SUPPORTED_MODELS) {
+      const temp = getValidNumber(raw.hourly, `temperature_2m_${model}`, i);
+      const precip = getValidNumber(raw.hourly, `precipitation_${model}`, i);
+      const wind = getValidNumber(raw.hourly, `windspeed_10m_${model}`, i);
+      const code = getValidNumber(raw.hourly, `weathercode_${model}`, i);
+      const cloud = getValidNumber(raw.hourly, `cloudcover_${model}`, i);
+      const pressure = getValidNumber(raw.hourly, `surface_pressure_${model}`, i);
+
+      if (temp !== null) {
+        availableModels.push(model);
+        const point: ModelDataPoint = {
+          model,
+          temperature: temp,
+          precipitation: precip ?? 0,
+          windSpeed: wind ?? 0,
+          weatherCode: code ?? 0,
+          cloudCover: cloud ?? 0,
+          pressure: pressure ?? 1013.25,
+        };
+        modelPoints[model] = point;
+
+        tempValues.push(temp);
+        precipValues.push(precip ?? 0);
+        windValues.push(wind ?? 0);
+        if (pressure !== null) {
+          pressureValues.push(pressure);
+        }
+        weatherCodes.push({ model, code: code ?? 0 });
+      }
+    }
+
+    const weightsMap = normalizeWeights(availableModels);
+
+    if (availableModels.length === 0) {
+      result.push({
+        time,
+        weightedTemperature: 0,
+        tempMin: 0,
+        tempMax: 0,
+        tempSpread: 0,
+        stdDev: 0,
+        confidenceScore: 10,
+        confidenceStatus: HU_TEXTS.confidenceLow as ConfidenceStatus,
+        precipitationProbability: 0,
+        precipitationAmount: 0,
+        weightedWindSpeed: 0,
+        weightedPressure: 1013.2,
+        dominantWeatherCode: 0,
+        weatherDescription: 'Tiszta égbolt',
+        weatherIcon: 'Sun',
+        models: modelPoints,
+        activeModelCount: 0,
+      });
+      continue;
+    }
+
+    // 1. Weighted Temperature
+    const weightedTemperature = Number(
+      availableModels
+        .reduce((sum, model) => {
+          const pt = modelPoints[model]!;
+          const w = weightsMap.get(model) ?? 0;
+          return sum + pt.temperature * w;
+        }, 0)
+        .toFixed(2)
+    );
+
+    // 2. tempMin & tempMax & tempSpread
+    const tempMin = Number(Math.min(...tempValues).toFixed(2));
+    const tempMax = Number(Math.max(...tempValues).toFixed(2));
+    const tempSpread = Number((tempMax - tempMin).toFixed(2));
+
+    // 3. Standard Deviation
+    const stdDev = Number(calculateStdDev(tempValues).toFixed(2));
+
+    // 4. Confidence Score: Math.max(10, Math.round(100 - (stdDev * 15))), clamped <= 100
+    const rawConfidence = Math.round(100 - stdDev * 15);
+    const confidenceScore = Math.min(100, Math.max(10, rawConfidence));
+    const { status: confidenceStatus } = classifyConfidence(confidenceScore);
+
+    // 5. Precipitation Probability: % of models predicting >= 0.1 mm
+    const precipGte01Count = precipValues.filter((p) => p >= 0.1).length;
+    const precipitationProbability = Math.round(
+      (precipGte01Count / availableModels.length) * 100
+    );
+
+    // 6. Precipitation Amount: Median of all non-zero predictions (fallback to 0)
+    const nonZeroPrecips = precipValues.filter((p) => p > 0);
+    const precipitationAmount =
+      nonZeroPrecips.length > 0
+        ? Number(calculateMedian(nonZeroPrecips).toFixed(2))
+        : 0;
+
+    // 7. Weighted Wind Speed
+    const weightedWindSpeed = Number(
+      availableModels
+        .reduce((sum, model) => {
+          const pt = modelPoints[model]!;
+          const w = weightsMap.get(model) ?? 0;
+          return sum + pt.windSpeed * w;
+        }, 0)
+        .toFixed(2)
+    );
+
+    // 8. Weighted Surface Pressure
+    const weightedPressure = Number(
+      availableModels
+        .reduce((sum, model) => {
+          const pt = modelPoints[model]!;
+          const w = weightsMap.get(model) ?? 0;
+          return sum + pt.pressure * w;
+        }, 0)
+        .toFixed(1)
+    );
+
+    // 9. Dominant Weather Code
+    const dominantWeatherCode = computeDominantWeatherCode(weatherCodes);
+    const weatherDetails = getWeatherCodeDetails(dominantWeatherCode);
+
+    result.push({
+      time,
+      weightedTemperature,
+      tempMin,
+      tempMax,
+      tempSpread,
+      stdDev,
+      confidenceScore,
+      confidenceStatus,
+      precipitationProbability,
+      precipitationAmount,
+      weightedWindSpeed,
+      weightedPressure,
+      dominantWeatherCode,
+      weatherDescription: weatherDetails.label,
+      weatherIcon: weatherDetails.iconName,
+      models: modelPoints,
+      activeModelCount: availableModels.length,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Daily Consensus Summary
+ */
+export function computeDailyConsensus(
+  hourlyPoints: HourlyConsensusPoint[]
+): DailyConsensusSummary[] {
+  if (hourlyPoints.length === 0) {
+    return [];
+  }
+
+  const daysMap = new Map<string, HourlyConsensusPoint[]>();
+
+  for (const point of hourlyPoints) {
+    const date = point.time.slice(0, 10);
+    const list = daysMap.get(date) ?? [];
+    list.push(point);
+    daysMap.set(date, list);
+  }
+
+  const summaries: DailyConsensusSummary[] = [];
+
+  for (const [date, hours] of daysMap.entries()) {
+    if (hours.length === 0) {
+      continue;
+    }
+
+    const tempMin = Number(Math.min(...hours.map((h) => h.tempMin)).toFixed(2));
+    const tempMax = Number(Math.max(...hours.map((h) => h.tempMax)).toFixed(2));
+
+    const totalPrecipitation = Number(
+      hours.reduce((acc, h) => acc + h.precipitationAmount, 0).toFixed(2)
+    );
+
+    const avgConfidence = Math.round(
+      hours.reduce((acc, h) => acc + h.confidenceScore, 0) / hours.length
+    );
+    const { status: confidenceStatus } = classifyConfidence(avgConfidence);
+
+    const hourlyCodeCounts = new Map<number, number>();
+    for (const h of hours) {
+      const c = hourlyCodeCounts.get(h.dominantWeatherCode) ?? 0;
+      hourlyCodeCounts.set(h.dominantWeatherCode, c + 1);
+    }
+    let maxCount = -1;
+    let dominantCode = hours[0]!.dominantWeatherCode;
+    for (const [code, count] of hourlyCodeCounts.entries()) {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantCode = code;
+      }
+    }
+    const weatherDetails = getWeatherCodeDetails(dominantCode);
+
+    summaries.push({
+      date,
+      tempMin,
+      tempMax,
+      totalPrecipitation,
+      averageConfidenceScore: avgConfidence,
+      confidenceStatus,
+      dominantWeatherCode: dominantCode,
+      weatherDescription: weatherDetails.label,
+      weatherIcon: weatherDetails.iconName,
+      hourlyPoints: hours,
+    });
+  }
+
+  return summaries;
+}
+
+/**
+ * Master aggregation function
+ */
+export function aggregateForecast(raw: OpenMeteoMultiModelResponse) {
+  const hourly = computeHourlyConsensus(raw);
+  const daily = computeDailyConsensus(hourly);
+
+  return {
+    location: {
+      latitude: raw.latitude,
+      longitude: raw.longitude,
+      elevation: raw.elevation,
+      timezone: raw.timezone,
+      timezoneAbbreviation: raw.timezone_abbreviation,
+      utcOffsetSeconds: raw.utc_offset_seconds,
+    },
+    hourly,
+    daily,
+    generatedAt: new Date().toISOString(),
+    rawResponse: raw,
+  };
+}
