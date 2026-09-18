@@ -45,7 +45,7 @@ export const DEFAULT_LOCATION: GeoLocation = {
 };
 
 /**
- * Curated preset Hungarian cities for instant selection
+ * Curated preset Hungarian cities & county seats for instant selection
  */
 export const POPULAR_LOCATIONS: GeoLocation[] = [
   DEFAULT_LOCATION,
@@ -74,16 +74,16 @@ export const POPULAR_LOCATIONS: GeoLocation[] = [
     population: 161837,
   },
   {
-    id: 3052009,
-    name: 'Győr',
-    latitude: 47.6833,
-    longitude: 17.6351,
-    elevation: 108,
+    id: 717596,
+    name: 'Miskolc',
+    latitude: 48.1035,
+    longitude: 20.7784,
+    elevation: 131,
     country: 'Magyarország',
     countryCode: 'HU',
-    admin1: 'Győr-Moson-Sopron',
+    admin1: 'Borsod-Abaúj-Zemplén',
     timezone: 'Europe/Budapest',
-    population: 132038,
+    population: 154521,
   },
   {
     id: 716587,
@@ -98,18 +98,203 @@ export const POPULAR_LOCATIONS: GeoLocation[] = [
     population: 142873,
   },
   {
-    id: 717596,
-    name: 'Miskolc',
-    latitude: 48.1035,
-    longitude: 20.7784,
-    elevation: 131,
+    id: 3052009,
+    name: 'Győr',
+    latitude: 47.6833,
+    longitude: 17.6351,
+    elevation: 108,
     country: 'Magyarország',
     countryCode: 'HU',
-    admin1: 'Borsod-Abaúj-Zemplén',
+    admin1: 'Győr-Moson-Sopron',
     timezone: 'Europe/Budapest',
-    population: 154521,
+    population: 132038,
+  },
+  {
+    id: 716766,
+    name: 'Nyíregyháza',
+    latitude: 47.9554,
+    longitude: 21.7167,
+    elevation: 116,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Szabolcs-Szatmár-Bereg',
+    timezone: 'Europe/Budapest',
+    population: 116899,
+  },
+  {
+    id: 719258,
+    name: 'Kecskemét',
+    latitude: 46.9075,
+    longitude: 19.6917,
+    elevation: 112,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Bács-Kiskun',
+    timezone: 'Europe/Budapest',
+    population: 110687,
+  },
+  {
+    id: 3044988,
+    name: 'Székesfehérvár',
+    latitude: 47.1899,
+    longitude: 18.4107,
+    elevation: 118,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Fejér',
+    timezone: 'Europe/Budapest',
+    population: 96940,
+  },
+  {
+    id: 3044955,
+    name: 'Szombathely',
+    latitude: 47.2307,
+    longitude: 16.6218,
+    elevation: 216,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Vas',
+    timezone: 'Europe/Budapest',
+    population: 78407,
+  },
+  {
+    id: 715383,
+    name: 'Szolnok',
+    latitude: 47.1833,
+    longitude: 20.2,
+    elevation: 85,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Jász-Nagykun-Szolnok',
+    timezone: 'Europe/Budapest',
+    population: 71285,
+  },
+  {
+    id: 3045332,
+    name: 'Siófok',
+    latitude: 46.9041,
+    longitude: 18.058,
+    elevation: 107,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Somogy',
+    timezone: 'Europe/Budapest',
+    population: 23028,
+  },
+  {
+    id: 3044310,
+    name: 'Veszprém',
+    latitude: 47.0933,
+    longitude: 17.9115,
+    elevation: 266,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Veszprém',
+    timezone: 'Europe/Budapest',
+    population: 60788,
+  },
+  {
+    id: 3045190,
+    name: 'Sopron',
+    latitude: 47.685,
+    longitude: 16.5905,
+    elevation: 217,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Győr-Moson-Sopron',
+    timezone: 'Europe/Budapest',
+    population: 62900,
+  },
+  {
+    id: 721013,
+    name: 'Eger',
+    latitude: 47.9026,
+    longitude: 20.3733,
+    elevation: 165,
+    country: 'Magyarország',
+    countryCode: 'HU',
+    admin1: 'Heves',
+    timezone: 'Europe/Budapest',
+    population: 52898,
   },
 ];
+
+export const STORAGE_LOCATION_KEY = 'omniforecast_selected_location';
+
+/**
+ * Retrieve saved location from browser localStorage, with Budapest fallback
+ */
+export function getStoredLocation(): GeoLocation {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return DEFAULT_LOCATION;
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_LOCATION_KEY);
+    if (!raw) return DEFAULT_LOCATION;
+    const parsed = JSON.parse(raw);
+    const lat =
+      typeof parsed.lat === 'number'
+        ? parsed.lat
+        : typeof parsed.latitude === 'number'
+          ? parsed.latitude
+          : null;
+    const lon =
+      typeof parsed.lon === 'number'
+        ? parsed.lon
+        : typeof parsed.longitude === 'number'
+          ? parsed.longitude
+          : null;
+    const name =
+      typeof parsed.name === 'string' && parsed.name.trim()
+        ? parsed.name.trim()
+        : null;
+
+    if (lat !== null && lon !== null && name !== null) {
+      return {
+        id: parsed.id ?? Date.now(),
+        name,
+        latitude: lat,
+        longitude: lon,
+        elevation: parsed.elevation ?? 0,
+        country: parsed.country ?? 'Magyarország',
+        countryCode: parsed.countryCode ?? 'HU',
+        admin1: parsed.admin1,
+        timezone: parsed.timezone ?? 'Europe/Budapest',
+        population: parsed.population,
+      };
+    }
+  } catch (e) {
+    console.warn('Could not parse stored location from localStorage:', e);
+  }
+  return DEFAULT_LOCATION;
+}
+
+/**
+ * Persist selected location object into browser localStorage
+ */
+export function setStoredLocation(loc: GeoLocation): void {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    const payload = {
+      id: loc.id,
+      name: loc.name,
+      lat: loc.latitude,
+      lon: loc.longitude,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      country: loc.country,
+      countryCode: loc.countryCode,
+      admin1: loc.admin1,
+      timezone: loc.timezone,
+      population: loc.population,
+    };
+    window.localStorage.setItem(STORAGE_LOCATION_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.warn('Could not save location to localStorage:', e);
+  }
+}
 
 /**
  * Helper to execute fetch requests with automatic retry and exponential backoff
@@ -172,6 +357,8 @@ export async function fetchMultiModelForecast(
   const params = new URLSearchParams({
     latitude: lat.toFixed(4),
     longitude: lon.toFixed(4),
+    current:
+      'temperature_2m,precipitation,weathercode,windspeed_10m,surface_pressure',
     hourly:
       'temperature_2m,precipitation,weathercode,windspeed_10m,cloudcover,surface_pressure',
     daily:
@@ -240,10 +427,17 @@ export async function searchCity(
 
   const boundedCount = Math.min(Math.max(1, Math.round(count)), 20);
 
+  // Check local popular Hungarian presets first
+  const normalizedQuery = trimmed.toLowerCase();
+  const localMatches = POPULAR_LOCATIONS.filter((loc) =>
+    loc.name.toLowerCase().includes(normalizedQuery)
+  );
+
   const params = new URLSearchParams({
     name: trimmed,
     count: boundedCount.toString(),
     language: 'hu',
+    country_code: 'HU',
     format: 'json',
   });
 
@@ -261,27 +455,33 @@ export async function searchCity(
 
     const data = (await response.json()) as OpenMeteoGeocodingResponse;
 
-    if (!data.results || !Array.isArray(data.results)) {
-      return [];
-    }
-
-    return data.results.map((r) => ({
+    const remoteResults: GeoLocation[] = (data.results || []).map((r) => ({
       id: r.id,
       name: r.name,
       latitude: r.latitude,
       longitude: r.longitude,
       elevation: r.elevation ?? 0,
-      country: r.country ?? '',
-      countryCode: r.country_code ?? '',
+      country: r.country ?? 'Magyarország',
+      countryCode: r.country_code ?? 'HU',
       admin1: r.admin1,
       timezone: r.timezone || 'Europe/Budapest',
       population: r.population,
     }));
+
+    // Deduplicate by name and combine
+    const combined: GeoLocation[] = [...localMatches];
+    for (const item of remoteResults) {
+      if (!combined.some((c) => c.name.toLowerCase() === item.name.toLowerCase())) {
+        combined.push(item);
+      }
+    }
+
+    return combined.slice(0, boundedCount);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      return [];
+      return localMatches;
     }
     console.warn(`[searchCity] Nem sikerült lekérdezni a várost: "${trimmed}":`, error);
-    return [];
+    return localMatches;
   }
 }

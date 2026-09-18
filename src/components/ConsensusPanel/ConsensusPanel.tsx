@@ -31,6 +31,7 @@ export interface ConsensusPanelProps {
   locationName?: string;
   country?: string;
   horizon?: 'most' | '24h' | '72h';
+  currentHourIndex?: number;
 }
 
 export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
@@ -39,6 +40,7 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   locationName = 'Budapest',
   country = 'Magyarország',
   horizon = 'most',
+  currentHourIndex = 0,
 }) => {
   if (hourlyPoints.length === 0) {
     return (
@@ -48,19 +50,20 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
     );
   }
 
-  const current = hourlyPoints[0]!;
+  // Strictly locate instantaneous current hour point
+  const current = hourlyPoints[currentHourIndex] || hourlyPoints[0]!;
   const confidence = classifyConfidence(current.confidenceScore);
 
-  // Filter hourly points based on selected time horizon
-  // 'most': next 8 hours for dense glance
+  // Slice timeline starting at current real-time hour
+  // 'most': immediate upcoming 10 hours for dense overview
   // '24h': next 24 hours
   // '72h': next 72 hours
   const filteredPoints =
     horizon === 'most'
-      ? hourlyPoints.slice(0, 8)
+      ? hourlyPoints.slice(currentHourIndex, currentHourIndex + 10)
       : horizon === '24h'
-        ? hourlyPoints.slice(0, 24)
-        : hourlyPoints.slice(0, 72);
+        ? hourlyPoints.slice(currentHourIndex, currentHourIndex + 24)
+        : hourlyPoints.slice(currentHourIndex, currentHourIndex + 72);
 
   // Series arrays for ECharts
   const timestamps = filteredPoints.map((p) => p.time);
@@ -79,6 +82,36 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
     confidenceScores
   );
 
+  // Derived metrics based on horizon
+  const isMost = horizon === 'most';
+
+  const periodTempMin = Math.min(...filteredPoints.map((p) => p.tempMin));
+  const periodTempMax = Math.max(...filteredPoints.map((p) => p.tempMax));
+  const periodTempAvg =
+    filteredPoints.reduce((acc, p) => acc + p.weightedTemperature, 0) /
+    (filteredPoints.length || 1);
+  const periodTotalRain = filteredPoints.reduce(
+    (acc, p) => acc + p.precipitationAmount,
+    0
+  );
+  const periodMaxRainProb = Math.max(
+    ...filteredPoints.map((p) => p.precipitationProbability),
+    0
+  );
+  const periodMaxWind = Math.max(
+    ...filteredPoints.map((p) => p.weightedWindSpeed),
+    0
+  );
+  const periodAvgPressure =
+    filteredPoints.reduce((acc, p) => acc + (p.weightedPressure || 1013), 0) /
+    (filteredPoints.length || 1);
+  const periodAvgSpread =
+    filteredPoints.reduce((acc, p) => acc + p.tempSpread, 0) /
+    (filteredPoints.length || 1);
+  const periodAvgStdDev =
+    filteredPoints.reduce((acc, p) => acc + p.stdDev, 0) /
+    (filteredPoints.length || 1);
+
   return (
     <div className="clean-card p-3.5 sm:p-4 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200 shadow-sm overflow-hidden">
       {/* 1. Header: Location, Current Weather & Confidence Badge */}
@@ -93,14 +126,16 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
 
           <div className="flex items-baseline gap-2 mt-0.5">
             <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              {Math.round(current.weightedTemperature)}°C
+              {isMost ? `${Math.round(current.weightedTemperature)}°C` : `${Math.round(periodTempAvg)}°C`}
             </span>
             <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
               <WeatherIcon name={current.weatherIcon} className="w-3.5 h-3.5 text-sky-600" />
-              {current.weatherDescription}
+              {isMost ? current.weatherDescription : `${horizon.toUpperCase()} átlag`}
             </span>
             <span className="text-[11px] text-slate-400 hidden xs:inline">
-              (Tartomány: {current.tempMin}° - {current.tempMax}°)
+              {isMost
+                ? `(Tartomány: ${current.tempMin}° - ${current.tempMax}°)`
+                : `(${horizon.toUpperCase()}: ${Math.round(periodTempMin)}° - ${Math.round(periodTempMax)}°)`}
             </span>
           </div>
         </div>
@@ -143,11 +178,17 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <span className="text-[11px] font-medium uppercase tracking-tight truncate">Hőmérséklet</span>
             <Thermometer className="w-3.5 h-3.5 text-sky-600 shrink-0" />
           </div>
-          <div className="text-base sm:text-lg font-semibold text-slate-900 tabular-nums">
-            {current.weightedTemperature.toFixed(1)}°C
+          <div className="text-base sm:text-lg font-semibold text-slate-900 tabular-nums truncate">
+            {isMost
+              ? `${current.weightedTemperature.toFixed(1)}°C`
+              : `${periodTempMin.toFixed(0)}° - ${periodTempMax.toFixed(0)}°`}
           </div>
           <div className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-            {dailySummary ? `Ma: ${dailySummary.tempMin}° / ${dailySummary.tempMax}°` : `±${(current.tempSpread / 2).toFixed(1)}°`}
+            {isMost
+              ? dailySummary
+                ? `Ma: ${dailySummary.tempMin}° / ${dailySummary.tempMax}°`
+                : `±${(current.tempSpread / 2).toFixed(1)}°`
+              : `Átlag: ${periodTempAvg.toFixed(1)}°C`}
           </div>
         </div>
 
@@ -158,10 +199,10 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <Activity className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
           </div>
           <div className="text-base sm:text-lg font-semibold text-slate-900 tabular-nums">
-            ±{(current.tempSpread / 2).toFixed(1)}°C
+            ±{isMost ? (current.tempSpread / 2).toFixed(1) : (periodAvgSpread / 2).toFixed(1)}°C
           </div>
           <div className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-            σ = {current.stdDev.toFixed(2)}°C
+            {isMost ? `σ = ${current.stdDev.toFixed(2)}°C` : `Átlag σ = ${periodAvgStdDev.toFixed(2)}°C`}
           </div>
         </div>
 
@@ -172,10 +213,10 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             <Droplets className="w-3.5 h-3.5 text-blue-600 shrink-0" />
           </div>
           <div className="text-base sm:text-lg font-semibold text-slate-900 tabular-nums">
-            {current.precipitationProbability}%
+            {isMost ? `${current.precipitationProbability}%` : `${periodTotalRain.toFixed(1)} mm`}
           </div>
           <div className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-            {current.precipitationAmount.toFixed(1)} mm
+            {isMost ? `${current.precipitationAmount.toFixed(1)} mm` : `Csúcs: ${periodMaxRainProb}%`}
           </div>
         </div>
 
@@ -189,10 +230,14 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
             </div>
           </div>
           <div className="text-base sm:text-lg font-semibold text-slate-900 tabular-nums">
-            {Math.round(current.weightedWindSpeed)} km/h
+            {isMost ? `${Math.round(current.weightedWindSpeed)} km/h` : `${Math.round(periodMaxWind)} km/h`}
           </div>
           <div className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-            {current.weightedPressure ? `${Math.round(current.weightedPressure)} hPa` : '1013 hPa'}
+            {isMost
+              ? current.weightedPressure
+                ? `${Math.round(current.weightedPressure)} hPa`
+                : '1013 hPa'
+              : `Átlag: ${Math.round(periodAvgPressure)} hPa`}
           </div>
         </div>
       </div>

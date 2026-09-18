@@ -4,12 +4,14 @@
  */
 
 import type {
+  AggregatedForecast,
   ConfidenceInfo,
   ConfidenceLevel,
   ConfidenceStatus,
   DailyConsensusSummary,
   HourlyConsensusPoint,
   ModelDataPoint,
+  ModelPeriodSummary,
   OpenMeteoMultiModelResponse,
   WeatherCodeDetails,
   WeatherModel,
@@ -466,11 +468,128 @@ export function computeDailyConsensus(
 }
 
 /**
+ * Locate the index in hourly times array that corresponds to current real-time.
+ */
+export function findCurrentHourIndex(
+  times: string[],
+  currentTimeStr?: string,
+  utcOffsetSeconds: number = 0
+): number {
+  if (times.length === 0) return 0;
+
+  if (currentTimeStr) {
+    const idx = times.indexOf(currentTimeStr);
+    if (idx !== -1) return idx;
+
+    // Match by "YYYY-MM-DDTHH" prefix
+    const prefix = currentTimeStr.slice(0, 13);
+    const prefixIdx = times.findIndex((t) => t.startsWith(prefix));
+    if (prefixIdx !== -1) return prefixIdx;
+  }
+
+  // Fallback: compute local time using utcOffsetSeconds
+  const now = new Date();
+  const localEpoch = now.getTime() + utcOffsetSeconds * 1000;
+  const localDate = new Date(localEpoch);
+  const isoLocalPrefix = localDate.toISOString().slice(0, 13);
+
+  const fallbackIdx = times.findIndex((t) => t.startsWith(isoLocalPrefix));
+  if (fallbackIdx !== -1) return fallbackIdx;
+
+  // Otherwise pick the time point closest to now
+  let closestIdx = 0;
+  let minDiff = Infinity;
+  const nowMs = Date.now();
+  for (let i = 0; i < times.length; i++) {
+    const tMs = Date.parse(times[i]!);
+    if (!Number.isNaN(tMs)) {
+      const diff = Math.abs(tMs - nowMs);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+  }
+  return closestIdx;
+}
+
+/**
+ * Calculate aggregated statistics for an individual model across a time horizon.
+ */
+export function calculateModelPeriodSummary(
+  hourlyPoints: HourlyConsensusPoint[],
+  modelKey: WeatherModel,
+  horizon: 'most' | '24h' | '72h',
+  startIndex: number = 0
+): ModelPeriodSummary {
+  const currentPt = hourlyPoints[startIndex]?.models[modelKey];
+  const count = horizon === 'most' ? 1 : horizon === '24h' ? 24 : 72;
+  const windowPoints = hourlyPoints.slice(startIndex, startIndex + count);
+
+  const modelPoints = windowPoints
+    .map((p) => p.models[modelKey])
+    .filter((pt): pt is ModelDataPoint => pt !== null && pt !== undefined);
+
+  if (modelPoints.length === 0) {
+    return {
+      model: modelKey,
+      tempMin: currentPt?.temperature ?? 0,
+      tempMax: currentPt?.temperature ?? 0,
+      tempAvg: currentPt?.temperature ?? 0,
+      totalPrecipitation: currentPt?.precipitation ?? 0,
+      maxWindSpeed: currentPt?.windSpeed ?? 0,
+      avgWindSpeed: currentPt?.windSpeed ?? 0,
+      avgPressure: currentPt?.pressure ?? 1013.2,
+      currentTemp: currentPt?.temperature,
+      currentPrecip: currentPt?.precipitation,
+      currentWind: currentPt?.windSpeed,
+      currentPressure: currentPt?.pressure,
+      currentWeatherCode: currentPt?.weatherCode,
+    };
+  }
+
+  const temps = modelPoints.map((p) => p.temperature);
+  const precips = modelPoints.map((p) => p.precipitation);
+  const winds = modelPoints.map((p) => p.windSpeed);
+  const pressures = modelPoints.map((p) => p.pressure);
+
+  const tempMin = Number(Math.min(...temps).toFixed(1));
+  const tempMax = Number(Math.max(...temps).toFixed(1));
+  const tempAvg = Number((temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1));
+  const totalPrecipitation = Number(precips.reduce((a, b) => a + b, 0).toFixed(1));
+  const maxWindSpeed = Number(Math.max(...winds).toFixed(0));
+  const avgWindSpeed = Number((winds.reduce((a, b) => a + b, 0) / winds.length).toFixed(0));
+  const avgPressure = Number((pressures.reduce((a, b) => a + b, 0) / pressures.length).toFixed(1));
+
+  return {
+    model: modelKey,
+    tempMin,
+    tempMax,
+    tempAvg,
+    totalPrecipitation,
+    maxWindSpeed,
+    avgWindSpeed,
+    avgPressure,
+    currentTemp: currentPt?.temperature,
+    currentPrecip: currentPt?.precipitation,
+    currentWind: currentPt?.windSpeed,
+    currentPressure: currentPt?.pressure,
+    currentWeatherCode: currentPt?.weatherCode,
+  };
+}
+
+/**
  * Master aggregation function
  */
-export function aggregateForecast(raw: OpenMeteoMultiModelResponse) {
+export function aggregateForecast(raw: OpenMeteoMultiModelResponse): AggregatedForecast {
   const hourly = computeHourlyConsensus(raw);
   const daily = computeDailyConsensus(hourly);
+  const currentHourIndex = findCurrentHourIndex(
+    raw.hourly?.time || [],
+    raw.current?.time,
+    raw.utc_offset_seconds || 0
+  );
+  const currentSnapshot = hourly[currentHourIndex] || hourly[0];
 
   return {
     location: {
@@ -481,6 +600,8 @@ export function aggregateForecast(raw: OpenMeteoMultiModelResponse) {
       timezoneAbbreviation: raw.timezone_abbreviation,
       utcOffsetSeconds: raw.utc_offset_seconds,
     },
+    currentHourIndex,
+    currentSnapshot,
     hourly,
     daily,
     generatedAt: new Date().toISOString(),

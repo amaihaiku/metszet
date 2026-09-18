@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type {
   DailyConsensusSummary,
@@ -9,7 +9,10 @@ import {
   SUPPORTED_MODELS,
   WEATHER_MODEL_REGISTRY,
 } from '../../types/weather';
-import { getWeatherCodeDetails } from '../../lib/aggregator';
+import {
+  getWeatherCodeDetails,
+  calculateModelPeriodSummary,
+} from '../../lib/aggregator';
 import { WeatherIcon } from '../Common/WeatherIcon';
 import {
   ArrowLeft,
@@ -24,32 +27,63 @@ import {
   MapPin,
 } from 'lucide-react';
 import { HU_TEXTS } from '../../lib/i18n';
+import type { TimeHorizon } from '../Controls/ViewControls';
 
 export interface SourcesCarouselProps {
   currentHour?: HourlyConsensusPoint;
+  hourlyPoints?: HourlyConsensusPoint[];
   todaySummary?: DailyConsensusSummary;
+  horizon?: TimeHorizon;
+  onHorizonChange?: (horizon: TimeHorizon) => void;
   onBack: () => void;
   locationName?: string;
+  currentHourIndex?: number;
 }
 
 export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
   currentHour,
+  hourlyPoints = [],
   todaySummary,
+  horizon = 'most',
+  onHorizonChange,
   onBack,
   locationName = 'Budapest',
+  currentHourIndex = 0,
 }) => {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const touchStartX = useRef<number | null>(null);
+  const touchDeltaX = useRef<number>(0);
 
   const models = SUPPORTED_MODELS;
   const currentModelKey: WeatherModel = models[currentIndex] ?? 'ecmwf_ifs025';
   const info = WEATHER_MODEL_REGISTRY[currentModelKey];
-  const point = currentHour?.models[currentModelKey];
-  const weather = getWeatherCodeDetails(point?.weatherCode ?? 0);
+
+  // Real-time instantaneous point for this model
+  const instantaneousPoint = currentHour?.models[currentModelKey];
+  const weather = getWeatherCodeDetails(instantaneousPoint?.weatherCode ?? 0);
+
+  // Model-specific period aggregation
+  const summary = calculateModelPeriodSummary(
+    hourlyPoints,
+    currentModelKey,
+    horizon,
+    currentHourIndex
+  );
+
+  // Calculate consensus average temperature for delta comparison
+  const windowCount = horizon === 'most' ? 1 : horizon === '24h' ? 24 : 72;
+  const activeWindow = hourlyPoints.slice(currentHourIndex, currentHourIndex + windowCount);
+  const consensusAvgTemp =
+    activeWindow.length > 0
+      ? activeWindow.reduce((acc, p) => acc + p.weightedTemperature, 0) / activeWindow.length
+      : currentHour?.weightedTemperature ?? 0;
 
   const delta =
-    point && currentHour
-      ? Number((point.temperature - currentHour.weightedTemperature).toFixed(1))
-      : null;
+    horizon === 'most'
+      ? instantaneousPoint && currentHour
+        ? Number((instantaneousPoint.temperature - currentHour.weightedTemperature).toFixed(1))
+        : null
+      : Number((summary.tempAvg - consensusAvgTemp).toFixed(1));
 
   const nextSlide = () => {
     setCurrentIndex((prev) => (prev + 1) % models.length);
@@ -59,44 +93,114 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
     setCurrentIndex((prev) => (prev - 1 + models.length) % models.length);
   };
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        setCurrentIndex((prev) => (prev - 1 + models.length) % models.length);
+      }
+      if (e.key === 'ArrowRight') {
+        setCurrentIndex((prev) => (prev + 1) % models.length);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [models.length]);
+
+  // Native touch gesture handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+    touchDeltaX.current = 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    touchDeltaX.current = (e.touches[0]?.clientX ?? 0) - touchStartX.current;
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null) return;
+    const threshold = 40;
+    if (touchDeltaX.current < -threshold) {
+      nextSlide();
+    } else if (touchDeltaX.current > threshold) {
+      prevSlide();
+    }
+    touchStartX.current = null;
+    touchDeltaX.current = 0;
+  };
+
+  const isMost = horizon === 'most';
+
   return (
-    <div className="h-full max-h-full flex flex-col justify-between py-2 px-3 sm:px-4 max-w-xl mx-auto w-full select-none">
-      {/* Top Header Bar */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+    <div
+      className="h-full max-h-full flex flex-col justify-between py-2 px-3 sm:px-4 max-w-xl mx-auto w-full select-none"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Top Header Bar with Location & Horizon Toggle */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200 gap-2">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-colors shadow-2xs"
+          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer shrink-0"
         >
           <ArrowLeft className="w-4 h-4 text-slate-500" />
-          <span>{HU_TEXTS.backButton}</span>
+          <span className="hidden xs:inline">{HU_TEXTS.backButton}</span>
         </button>
 
-        <div className="text-center">
-          <h2 className="text-sm font-bold text-slate-900 m-0">
-            {HU_TEXTS.sourcesTitle}
-          </h2>
-          <div className="flex items-center justify-center gap-1 text-[11px] text-slate-500">
-            <MapPin className="w-3 h-3 text-sky-600" />
-            <span>{locationName}</span>
-          </div>
+        <div className="flex items-center gap-1 text-xs text-slate-700 font-semibold truncate">
+          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+          <span className="truncate max-w-[90px] sm:max-w-[140px]">{locationName}</span>
         </div>
 
-        <div className="text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200">
+        {/* Compact Horizon Toggle */}
+        {onHorizonChange && (
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200/80 text-[11px] font-semibold shrink-0">
+            {(['most', '24h', '72h'] as TimeHorizon[]).map((h) => (
+              <button
+                key={h}
+                type="button"
+                onClick={() => onHorizonChange(h)}
+                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                  horizon === h
+                    ? 'bg-white text-sky-700 shadow-2xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {h === 'most' ? 'Most' : h}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 shrink-0">
           {currentIndex + 1} / {models.length}
         </div>
       </div>
 
-      {/* Main Swipeable Carousel Card */}
-      <div className="relative my-auto py-2">
+      {/* Main Swipeable Carousel Card with Drag Gesture */}
+      <div className="relative my-auto py-2 touch-pan-y">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentModelKey}
-            initial={{ opacity: 0, x: 20 }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.25}
+            onDragEnd={(_e, { offset, velocity }) => {
+              const swipeThreshold = 50;
+              if (offset.x < -swipeThreshold || velocity.x < -300) {
+                nextSlide();
+              } else if (offset.x > swipeThreshold || velocity.x > 300) {
+                prevSlide();
+              }
+            }}
+            initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.25 }}
-            className="clean-card p-5 relative overflow-hidden bg-white shadow-md border-t-4"
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.2 }}
+            className="clean-card p-5 relative overflow-hidden bg-white shadow-md border-t-4 cursor-grab active:cursor-grabbing"
             style={{ borderTopColor: info.color }}
           >
             {/* Top info badge & agency */}
@@ -132,13 +236,22 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
             <div className="flex items-center justify-between my-4 px-1">
               <div>
                 <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
-                  {point ? `${point.temperature.toFixed(1)}°C` : '--'}
+                  {isMost
+                    ? instantaneousPoint
+                      ? `${instantaneousPoint.temperature.toFixed(1)}°C`
+                      : '--'
+                    : `${summary.tempAvg.toFixed(1)}°C`}
                 </div>
                 <div className="text-xs font-medium text-slate-600 mt-1 flex items-center gap-1.5">
-                  <span>{weather.label}</span>
-                  {todaySummary && (
+                  <span>{isMost ? weather.label : `${horizon.toUpperCase()} előrejelzés`}</span>
+                  {isMost && todaySummary && (
                     <span className="text-slate-400 font-normal">
                       (Ma: {todaySummary.tempMin}° / {todaySummary.tempMax}°)
+                    </span>
+                  )}
+                  {!isMost && (
+                    <span className="text-slate-400 font-normal">
+                      ({summary.tempMin.toFixed(0)}° - {summary.tempMax.toFixed(0)}°)
                     </span>
                   )}
                 </div>
@@ -161,7 +274,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
               <div className="mb-4 py-1.5 px-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                 <span className="text-slate-500 flex items-center gap-1 text-[11px] font-medium">
                   <Activity className="w-3.5 h-3.5 text-slate-400" />
-                  Eltérés a konszenzustól:
+                  Eltérés a konszenzustól ({horizon === 'most' ? 'Most' : horizon}):
                 </span>
                 <span
                   className={`font-bold ${
@@ -185,8 +298,15 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   <Thermometer className="w-3.5 h-3.5 text-sky-600" />
                 </div>
                 <div className="text-base sm:text-lg font-semibold tabular-nums text-slate-900">
-                  {point ? `${point.temperature.toFixed(1)} °C` : '--'}
+                  {isMost
+                    ? instantaneousPoint
+                      ? `${instantaneousPoint.temperature.toFixed(1)} °C`
+                      : '--'
+                    : `${summary.tempMin.toFixed(0)}° - ${summary.tempMax.toFixed(0)}°`}
                 </div>
+                {!isMost && (
+                  <span className="text-[10px] text-slate-500">Átlag: {summary.tempAvg.toFixed(1)} °C</span>
+                )}
               </div>
 
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
@@ -195,8 +315,15 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   <Droplets className="w-3.5 h-3.5 text-blue-600" />
                 </div>
                 <div className="text-base sm:text-lg font-semibold tabular-nums text-slate-900">
-                  {point ? `${point.precipitation.toFixed(1)} mm` : '--'}
+                  {isMost
+                    ? instantaneousPoint
+                      ? `${instantaneousPoint.precipitation.toFixed(1)} mm`
+                      : '--'
+                    : `${summary.totalPrecipitation.toFixed(1)} mm`}
                 </div>
+                {!isMost && (
+                  <span className="text-[10px] text-slate-500">{horizon} összeg</span>
+                )}
               </div>
 
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
@@ -205,8 +332,15 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   <Wind className="w-3.5 h-3.5 text-teal-600" />
                 </div>
                 <div className="text-base sm:text-lg font-semibold tabular-nums text-slate-900">
-                  {point ? `${Math.round(point.windSpeed)} km/h` : '--'}
+                  {isMost
+                    ? instantaneousPoint
+                      ? `${Math.round(instantaneousPoint.windSpeed)} km/h`
+                      : '--'
+                    : `${summary.maxWindSpeed} km/h max`}
                 </div>
+                {!isMost && (
+                  <span className="text-[10px] text-slate-500">Átlag: {summary.avgWindSpeed} km/h</span>
+                )}
               </div>
 
               <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
@@ -215,8 +349,15 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   <Gauge className="w-3.5 h-3.5 text-indigo-600" />
                 </div>
                 <div className="text-base sm:text-lg font-semibold tabular-nums text-slate-900">
-                  {point ? `${point.pressure.toFixed(1)} hPa` : '--'}
+                  {isMost
+                    ? instantaneousPoint
+                      ? `${instantaneousPoint.pressure.toFixed(1)} hPa`
+                      : '--'
+                    : `${Math.round(summary.avgPressure)} hPa`}
                 </div>
+                {!isMost && (
+                  <span className="text-[10px] text-slate-500">{horizon} átlag</span>
+                )}
               </div>
             </div>
 
@@ -232,7 +373,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
           type="button"
           onClick={prevSlide}
           aria-label="Előző forrás"
-          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20"
+          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20 cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -241,7 +382,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
           type="button"
           onClick={nextSlide}
           aria-label="Következő forrás"
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 w-8 h-8 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20 cursor-pointer"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
@@ -260,7 +401,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                 type="button"
                 onClick={() => setCurrentIndex(idx)}
                 aria-label={modelInfo.shortName}
-                className={`h-2 rounded-full transition-all ${
+                className={`h-2 rounded-full transition-all cursor-pointer ${
                   isCurrent ? 'w-6 bg-sky-600' : 'w-2 bg-slate-300 hover:bg-slate-400'
                 }`}
               />
@@ -272,7 +413,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300 text-slate-700 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:shadow transition-all"
+          className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300 text-slate-700 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:shadow transition-all cursor-pointer"
         >
           <Layers className="w-4 h-4 text-slate-500" />
           <span>Vissza a konszenzusos nézetbe</span>
@@ -281,4 +422,3 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
     </div>
   );
 };
-

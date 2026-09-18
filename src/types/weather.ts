@@ -136,6 +136,16 @@ export interface OpenMeteoDailyRaw {
   [key: string]: (number | null)[] | string[];
 }
 
+export interface OpenMeteoCurrentRaw {
+  time: string;
+  temperature_2m?: number;
+  precipitation?: number;
+  weathercode?: number;
+  windspeed_10m?: number;
+  surface_pressure?: number;
+  [key: string]: number | string | undefined;
+}
+
 export interface OpenMeteoMultiModelResponse {
   latitude: number;
   longitude: number;
@@ -144,6 +154,8 @@ export interface OpenMeteoMultiModelResponse {
   utc_offset_seconds: number;
   timezone: string;
   timezone_abbreviation: string;
+  current_units?: Record<string, string>;
+  current?: OpenMeteoCurrentRaw;
   hourly_units: Record<string, string>;
   hourly: OpenMeteoHourlyRaw;
   daily_units?: Record<string, string>;
@@ -279,6 +291,22 @@ export interface DailyConsensusSummary {
   hourlyPoints: HourlyConsensusPoint[];
 }
 
+export interface ModelPeriodSummary {
+  model: WeatherModel;
+  tempMin: number;
+  tempMax: number;
+  tempAvg: number;
+  totalPrecipitation: number;
+  maxWindSpeed: number;
+  avgWindSpeed: number;
+  avgPressure: number;
+  currentTemp?: number;
+  currentPrecip?: number;
+  currentWind?: number;
+  currentPressure?: number;
+  currentWeatherCode?: number;
+}
+
 export interface AggregatedForecast {
   location: {
     latitude: number;
@@ -288,6 +316,8 @@ export interface AggregatedForecast {
     timezoneAbbreviation: string;
     utcOffsetSeconds: number;
   };
+  currentHourIndex: number;
+  currentSnapshot?: HourlyConsensusPoint;
   hourly: HourlyConsensusPoint[];
   daily: DailyConsensusSummary[];
   generatedAt: string;

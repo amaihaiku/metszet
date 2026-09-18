@@ -5,10 +5,9 @@ import type {
   HourlyConsensusPoint,
 } from './types/weather';
 import {
-  DEFAULT_LOCATION,
-  POPULAR_LOCATIONS,
   fetchMultiModelForecast,
-  searchCity,
+  getStoredLocation,
+  setStoredLocation,
 } from './api/openMeteo';
 import { aggregateForecast } from './lib/aggregator';
 import { ConsensusPanel } from './components/ConsensusPanel/ConsensusPanel';
@@ -18,37 +17,35 @@ import {
 } from './components/Controls/ViewControls';
 import { SourcesCarousel } from './components/SourcesView/SourcesCarousel';
 import { OrientationLock } from './components/Orientation/OrientationLock';
+import { SettlementModal } from './components/Location/SettlementModal';
 import appIcon from './assets/app-icon.png';
 import {
-  Search,
   RefreshCw,
   AlertCircle,
   Layers,
+  MapPin,
+  ChevronDown,
 } from 'lucide-react';
 import { HU_TEXTS } from './lib/i18n';
 import './App.css';
 
 export function App() {
   const [selectedLocation, setSelectedLocation] =
-    useState<GeoLocation>(DEFAULT_LOCATION);
+    useState<GeoLocation>(() => getStoredLocation());
   const [horizon, setHorizon] = useState<TimeHorizon>('most');
   const [showSources, setShowSources] = useState<boolean>(false);
+  const [showSettlementModal, setShowSettlementModal] = useState<boolean>(false);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
   const [hourlyPoints, setHourlyPoints] = useState<HourlyConsensusPoint[]>([]);
+  const [currentHourIndex, setCurrentHourIndex] = useState<number>(0);
   const [dailySummaries, setDailySummaries] = useState<DailyConsensusSummary[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Search state
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<GeoLocation[]>([]);
-  const [searching, setSearching] = useState<boolean>(false);
-  const [showSearchDropdown, setShowSearchDropdown] = useState<boolean>(false);
-
-  // Map horizon to forecast days needed from API
-  // 'most': 2 days, '24h': 2 days, '72h': 4 days
-  const days = horizon === '72h' ? 4 : 2;
+  // Map horizon to forecast days needed from Open-Meteo
+  // 72h from current hour may span into day 4-5
+  const days = horizon === '72h' ? 5 : 3;
 
   useEffect(() => {
     let ignore = false;
@@ -69,6 +66,7 @@ export function App() {
         const aggregated = aggregateForecast(raw);
 
         setHourlyPoints(aggregated.hourly);
+        setCurrentHourIndex(aggregated.currentHourIndex);
         setDailySummaries(aggregated.daily);
       } catch (err) {
         if (ignore) return;
@@ -89,42 +87,19 @@ export function App() {
     };
   }, [selectedLocation, days, refreshKey]);
 
-  // Handle City Search with debounce
-  useEffect(() => {
-    const query = searchQuery.trim();
-    if (query.length < 2) {
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await searchCity(query, 6);
-        setSearchResults(results);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const displayedResults = searchQuery.trim().length < 2 ? [] : searchResults;
-
-  const handleSelectCity = (city: GeoLocation) => {
-    setSelectedLocation(city);
-    setSearchQuery('');
-    setShowSearchDropdown(false);
+  const handleSelectLocation = (loc: GeoLocation) => {
+    setSelectedLocation(loc);
+    setStoredLocation(loc);
   };
+
+  const currentPoint = hourlyPoints[currentHourIndex] || hourlyPoints[0];
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between overflow-hidden bg-white text-slate-900 select-none">
       {/* 1. Orientation Lock Overlay (Triggers when mobile is in landscape) */}
       <OrientationLock />
 
-      {/* 2. Top Header: App Icon & Title ONLY, with Location search */}
+      {/* 2. Top Header: App Icon & Title, and Searchable Settlement Button */}
       <header className="h-14 min-h-14 px-3.5 sm:px-5 flex items-center justify-between border-b border-slate-200/70 bg-white/95 backdrop-blur-md z-40 shrink-0">
         {/* Branding: Icon (~40px) right next to Title with optical alignment */}
         <div className="flex items-center gap-2.5">
@@ -138,81 +113,40 @@ export function App() {
           </h1>
         </div>
 
-        {/* Compact Search & City Picker */}
-        <div className="flex items-center gap-2">
-          {/* Quick Hungarian Preset Cities Dropdown / Selector */}
-          <div className="relative">
-            <select
-              value={selectedLocation.name}
-              onChange={(e) => {
-                const found = POPULAR_LOCATIONS.find((l) => l.name === e.target.value);
-                if (found) setSelectedLocation(found);
-              }}
-              className="text-xs font-semibold py-1 px-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200/70 focus:outline-hidden transition-colors cursor-pointer"
-            >
-              {POPULAR_LOCATIONS.map((loc) => (
-                <option key={loc.id} value={loc.name}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Search Box */}
-          <div className="relative hidden sm:block w-44 lg:w-56">
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSearchDropdown(true);
-                }}
-                onFocus={() => setShowSearchDropdown(true)}
-                placeholder={HU_TEXTS.searchPlaceholder}
-                className="clean-input w-full pl-8 pr-7 py-1 text-xs rounded-lg text-slate-900 placeholder-slate-400"
-              />
-              {searching && (
-                <RefreshCw className="w-3 h-3 text-sky-600 animate-spin absolute right-2.5" />
-              )}
-            </div>
-
-            {/* Dropdown Results */}
-            {showSearchDropdown && displayedResults.length > 0 && (
-              <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-xl shadow-xl z-50 border border-slate-200 overflow-hidden">
-                {displayedResults.map((city) => (
-                  <button
-                    key={`${city.id}-${city.name}`}
-                    type="button"
-                    onClick={() => handleSelectCity(city)}
-                    className="w-full px-3 py-2 text-left text-xs text-slate-800 hover:bg-slate-50 flex items-center justify-between border-b border-slate-100 last:border-0 transition-colors"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-900">{city.name}</span>
-                      <span className="text-slate-500 ml-1.5 text-[11px]">
-                        {city.admin1 ? `${city.admin1}, ` : ''}
-                        {city.country}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-400">{city.countryCode}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Accessible Searchable Settlement Trigger */}
+        <button
+          type="button"
+          onClick={() => setShowSettlementModal(true)}
+          className="inline-flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 text-xs font-semibold text-slate-800 transition-all shadow-2xs hover:shadow-xs cursor-pointer max-w-[170px] sm:max-w-[220px]"
+          aria-label="Település módosítása"
+        >
+          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+          <span className="truncate">{selectedLocation.name}</span>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-0.5" />
+        </button>
       </header>
+
+      {/* Settlement Search Combobox Modal */}
+      <SettlementModal
+        isOpen={showSettlementModal}
+        onClose={() => setShowSettlementModal(false)}
+        selectedLocation={selectedLocation}
+        onSelectLocation={handleSelectLocation}
+      />
 
       {/* 3. Main Body Container (fits single screen height without vertical scrolling) */}
       <main className="flex-1 min-h-0 flex flex-col justify-between p-2.5 sm:p-3.5 max-w-4xl mx-auto w-full overflow-hidden">
         {showSources ? (
-          /* Dedicated Sources Carousel View */
+          /* Dedicated Sources Carousel View (with touch swipe & synced horizon) */
           <SourcesCarousel
-            currentHour={hourlyPoints[0]}
+            currentHour={currentPoint}
+            hourlyPoints={hourlyPoints}
             todaySummary={dailySummaries[0]}
+            horizon={horizon}
+            onHorizonChange={setHorizon}
             onBack={() => setShowSources(false)}
             locationName={selectedLocation.name}
+            currentHourIndex={currentHourIndex}
           />
         ) : (
           /* Primary Summary Dashboard (Single Viewport) */
@@ -246,7 +180,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => setRefreshKey((k) => k + 1)}
-                    className="mt-2 px-3 py-1 rounded bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 transition-colors"
+                    className="mt-2 px-3 py-1 rounded bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 transition-colors cursor-pointer"
                   >
                     {HU_TEXTS.retry}
                   </button>
@@ -262,6 +196,7 @@ export function App() {
                 locationName={selectedLocation.name}
                 country={selectedLocation.country}
                 horizon={horizon}
+                currentHourIndex={currentHourIndex}
               />
             )}
 
@@ -274,7 +209,9 @@ export function App() {
               >
                 <Layers className="w-4 h-4 text-sky-600 transition-transform group-hover:scale-105" />
                 <span className="font-semibold text-slate-800">{HU_TEXTS.sourcesButton}</span>
-                <span className="text-slate-400 font-normal text-xs">(4 modell nyers adatai)</span>
+                <span className="text-slate-400 font-normal text-xs">
+                  ({horizon === 'most' ? '4 modell valós idejű adatai' : `4 modell ${horizon} adatai`})
+                </span>
               </button>
             </div>
           </div>
