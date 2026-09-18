@@ -358,11 +358,11 @@ export async function fetchMultiModelForecast(
     latitude: lat.toFixed(4),
     longitude: lon.toFixed(4),
     current:
-      'temperature_2m,precipitation,weathercode,windspeed_10m,surface_pressure',
+      'temperature_2m,precipitation,weathercode,windspeed_10m,winddirection_10m,surface_pressure,relative_humidity_2m',
     hourly:
       'temperature_2m,precipitation,weathercode,windspeed_10m,cloudcover,surface_pressure',
     daily:
-      'temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max',
+      'temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max,sunrise,sunset',
     models: SUPPORTED_MODELS.join(','),
     forecast_days: boundedDays.toString(),
     timezone: 'auto',

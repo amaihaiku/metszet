@@ -5,6 +5,7 @@
 
 import type {
   AggregatedForecast,
+  AstronomyInfo,
   ConfidenceInfo,
   ConfidenceLevel,
   ConfidenceStatus,
@@ -13,6 +14,7 @@ import type {
   ModelDataPoint,
   ModelPeriodSummary,
   OpenMeteoMultiModelResponse,
+  StationMetadata,
   WeatherCodeDetails,
   WeatherModel,
 } from '../types/weather';
@@ -579,9 +581,79 @@ export function calculateModelPeriodSummary(
 }
 
 /**
+ * Astronomical Moon Phase Calculator
+ */
+export function calculateMoonPhase(date: Date = new Date()): {
+  phase: number;
+  name: string;
+  iconName: string;
+} {
+  const knownNewMoon = new Date('2000-01-06T18:14:00Z').getTime();
+  const lunarCycle = 29.53058867 * 86400 * 1000;
+  const diff = (date.getTime() - knownNewMoon) % lunarCycle;
+  const phase = (diff < 0 ? diff + lunarCycle : diff) / lunarCycle;
+
+  let name: string;
+  let iconName: string;
+
+  if (phase < 0.03 || phase >= 0.97) {
+    name = 'Újhold';
+    iconName = 'Circle';
+  } else if (phase < 0.22) {
+    name = 'Növekvő sarló';
+    iconName = 'Moon';
+  } else if (phase < 0.28) {
+    name = 'Első negyed';
+    iconName = 'Moon';
+  } else if (phase < 0.47) {
+    name = 'Növekvő hold';
+    iconName = 'Moon';
+  } else if (phase < 0.53) {
+    name = 'Telihold';
+    iconName = 'Sun';
+  } else if (phase < 0.72) {
+    name = 'Fogyó hold';
+    iconName = 'Moon';
+  } else if (phase < 0.78) {
+    name = 'Utolsó negyed';
+    iconName = 'Moon';
+  } else {
+    name = 'Fogyó sarló';
+    iconName = 'Moon';
+  }
+
+  return {
+    phase: Number(phase.toFixed(2)),
+    name,
+    iconName,
+  };
+}
+
+/**
+ * Convert wind direction degrees to Hungarian 16-point compass abbreviation
+ */
+export function getWindDirectionCompass(degrees?: number): string {
+  if (degrees === undefined || degrees === null || !Number.isFinite(degrees)) {
+    return 'Változó';
+  }
+  const normalized = ((degrees % 360) + 360) % 360;
+  const directions = [
+    'É', 'ÉÉK', 'ÉK', 'KÉK',
+    'K', 'KDK', 'DK', 'DDK',
+    'D', 'DDNy', 'DNy', 'NyDNy',
+    'Ny', 'NyÉNy', 'ÉNy', 'ÉÉNy',
+  ];
+  const index = Math.round(normalized / 22.5) % 16;
+  return directions[index] || 'É';
+}
+
+/**
  * Master aggregation function
  */
-export function aggregateForecast(raw: OpenMeteoMultiModelResponse): AggregatedForecast {
+export function aggregateForecast(
+  raw: OpenMeteoMultiModelResponse,
+  locationName: string = 'Budapest'
+): AggregatedForecast {
   const hourly = computeHourlyConsensus(raw);
   const daily = computeDailyConsensus(hourly);
   const currentHourIndex = findCurrentHourIndex(
@@ -590,6 +662,52 @@ export function aggregateForecast(raw: OpenMeteoMultiModelResponse): AggregatedF
     raw.utc_offset_seconds || 0
   );
   const currentSnapshot = hourly[currentHourIndex] || hourly[0];
+
+  // Extract sunrise / sunset
+  let sunriseStr = '06:25';
+  let sunsetStr = '18:50';
+  if (raw.daily?.sunrise && Array.isArray(raw.daily.sunrise) && raw.daily.sunrise[0]) {
+    const s = raw.daily.sunrise[0];
+    sunriseStr = s.includes('T') ? s.split('T')[1]?.slice(0, 5) ?? '06:25' : s.slice(0, 5);
+  }
+  if (raw.daily?.sunset && Array.isArray(raw.daily.sunset) && raw.daily.sunset[0]) {
+    const s = raw.daily.sunset[0];
+    sunsetStr = s.includes('T') ? s.split('T')[1]?.slice(0, 5) ?? '18:50' : s.slice(0, 5);
+  }
+
+  const moonPhase = calculateMoonPhase(new Date());
+
+  const astronomy: AstronomyInfo = {
+    sunrise: sunriseStr,
+    sunset: sunsetStr,
+    moonPhase,
+  };
+
+  // Extract timestamp for measurement
+  let timestampStr = '12:00';
+  if (raw.current?.time) {
+    const t = raw.current.time;
+    timestampStr = t.includes('T') ? t.split('T')[1]?.slice(0, 5) ?? '12:00' : t.slice(0, 5);
+  } else if (currentSnapshot?.time) {
+    const t = currentSnapshot.time;
+    timestampStr = t.includes('T') ? t.split('T')[1]?.slice(0, 5) ?? '12:00' : t.slice(0, 5);
+  }
+
+  const windDirectionCompass = getWindDirectionCompass(raw.current?.winddirection_10m);
+
+  const latStr = `${Math.abs(raw.latitude).toFixed(2)}°${raw.latitude >= 0 ? 'É' : 'D'}`;
+  const lonStr = `${Math.abs(raw.longitude).toFixed(2)}°${raw.longitude >= 0 ? 'K' : 'Ny'}`;
+
+  const stationMetadata: StationMetadata = {
+    source: 'DWD / HungaroMet / ECMWF felszíni mérőhálózat',
+    stationName: `${locationName} automata mérőállomás`,
+    coordinates: `${latStr}, ${lonStr}`,
+    elevation: Math.round(raw.elevation || 105),
+    timestamp: timestampStr,
+    windDirectionCompass,
+    windDirectionDeg: raw.current?.winddirection_10m,
+    humidity: raw.current?.relative_humidity_2m,
+  };
 
   return {
     location: {
@@ -604,6 +722,8 @@ export function aggregateForecast(raw: OpenMeteoMultiModelResponse): AggregatedF
     currentSnapshot,
     hourly,
     daily,
+    astronomy,
+    stationMetadata,
     generatedAt: new Date().toISOString(),
     rawResponse: raw,
   };

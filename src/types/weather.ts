@@ -133,7 +133,9 @@ export interface OpenMeteoHourlyRaw {
 
 export interface OpenMeteoDailyRaw {
   time: string[];
-  [key: string]: (number | null)[] | string[];
+  sunrise?: string[];
+  sunset?: string[];
+  [key: string]: (number | null)[] | string[] | undefined;
 }
 
 export interface OpenMeteoCurrentRaw {
@@ -142,7 +144,9 @@ export interface OpenMeteoCurrentRaw {
   precipitation?: number;
   weathercode?: number;
   windspeed_10m?: number;
+  winddirection_10m?: number;
   surface_pressure?: number;
+  relative_humidity_2m?: number;
   [key: string]: number | string | undefined;
 }
 
@@ -307,6 +311,27 @@ export interface ModelPeriodSummary {
   currentWeatherCode?: number;
 }
 
+export interface AstronomyInfo {
+  sunrise: string;
+  sunset: string;
+  moonPhase: {
+    phase: number;
+    name: string;
+    iconName: string;
+  };
+}
+
+export interface StationMetadata {
+  source: string;
+  stationName: string;
+  coordinates: string;
+  elevation: number;
+  timestamp: string;
+  windDirectionCompass: string;
+  windDirectionDeg?: number;
+  humidity?: number;
+}
+
 export interface AggregatedForecast {
   location: {
     latitude: number;
@@ -320,6 +345,8 @@ export interface AggregatedForecast {
   currentSnapshot?: HourlyConsensusPoint;
   hourly: HourlyConsensusPoint[];
   daily: DailyConsensusSummary[];
+  astronomy?: AstronomyInfo;
+  stationMetadata?: StationMetadata;
   generatedAt: string;
   rawResponse?: OpenMeteoMultiModelResponse;
 }

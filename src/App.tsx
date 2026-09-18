@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import type {
+  AstronomyInfo,
   DailyConsensusSummary,
   GeoLocation,
   HourlyConsensusPoint,
+  StationMetadata,
 } from './types/weather';
 import {
   fetchMultiModelForecast,
@@ -40,6 +42,8 @@ export function App() {
   const [hourlyPoints, setHourlyPoints] = useState<HourlyConsensusPoint[]>([]);
   const [currentHourIndex, setCurrentHourIndex] = useState<number>(0);
   const [dailySummaries, setDailySummaries] = useState<DailyConsensusSummary[]>([]);
+  const [astronomy, setAstronomy] = useState<AstronomyInfo | undefined>();
+  const [stationMetadata, setStationMetadata] = useState<StationMetadata | undefined>();
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,11 +67,13 @@ export function App() {
           days
         );
         if (ignore) return;
-        const aggregated = aggregateForecast(raw);
+        const aggregated = aggregateForecast(raw, selectedLocation.name);
 
         setHourlyPoints(aggregated.hourly);
         setCurrentHourIndex(aggregated.currentHourIndex);
         setDailySummaries(aggregated.daily);
+        setAstronomy(aggregated.astronomy);
+        setStationMetadata(aggregated.stationMetadata);
       } catch (err) {
         if (ignore) return;
         console.error('Failed to load forecast:', err);
@@ -100,13 +106,13 @@ export function App() {
       <OrientationLock />
 
       {/* 2. Top Header: App Icon & Title, and Searchable Settlement Button */}
-      <header className="h-14 min-h-14 px-3.5 sm:px-5 flex items-center justify-between border-b border-slate-200/70 bg-white/95 backdrop-blur-md z-40 shrink-0">
-        {/* Branding: Icon (~40px) right next to Title with optical alignment */}
-        <div className="flex items-center gap-2.5">
+      <header className="h-16 min-h-16 px-3.5 sm:px-5 flex items-center justify-between border-b border-slate-200/70 bg-white/95 backdrop-blur-md z-40 shrink-0">
+        {/* Branding: 1.5x scaled icon (~52-56px), bare on white background with optical alignment */}
+        <div className="flex items-center gap-3">
           <img
             src={appIcon}
             alt="OmniForecast Icon"
-            className="w-10 h-10 rounded-xl object-contain shadow-xs border border-slate-100"
+            className="w-[50px] h-[50px] sm:w-[56px] sm:h-[56px] object-contain shrink-0"
           />
           <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 m-0 leading-none">
             {HU_TEXTS.appTitle}
@@ -122,7 +128,7 @@ export function App() {
         >
           <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
           <span className="truncate">{selectedLocation.name}</span>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-0.5" />
+          <ChevronDown className="w-3 h-3 text-slate-400 shrink-0 ml-0.5" />
         </button>
       </header>
 
@@ -197,6 +203,8 @@ export function App() {
                 country={selectedLocation.country}
                 horizon={horizon}
                 currentHourIndex={currentHourIndex}
+                astronomy={astronomy}
+                stationMetadata={stationMetadata}
               />
             )}
 
