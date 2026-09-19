@@ -25,6 +25,7 @@ import {
   MapPin,
   Clock,
   Radio,
+  Radar,
   Compass,
   CheckCircle2,
 } from 'lucide-react';
@@ -39,17 +40,18 @@ export interface ConsensusPanelProps {
   currentHourIndex?: number;
   astronomy?: AstronomyInfo;
   stationMetadata?: StationMetadata;
+  onOpenRadar?: () => void;
 }
 
 export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   hourlyPoints,
-  dailySummary,
   locationName = 'Budapest',
   country = 'Magyarország',
   horizon = 'most',
   currentHourIndex = 0,
   astronomy,
   stationMetadata,
+  onOpenRadar,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [prevHorizon, setPrevHorizon] = useState<string>(horizon);
@@ -78,12 +80,12 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
   // --------------------------------------------------------------------------
   if (isMost) {
     return (
-      <div className="clean-card p-3 sm:p-4 flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden gap-2">
+      <div className="clean-card p-2.5 sm:p-3 h-auto flex flex-col justify-between flex-1 min-h-0 bg-white border border-slate-200/90 shadow-sm overflow-hidden gap-1.5 sm:gap-2">
         {/* Top Info Strip: Astro & Biometeorology (Sunrise, Sunset, Moon, Front) - strictly icon + value */}
         <AstroFrontStrip astronomy={astronomy} />
 
-        {/* Top Hero: Current Temperature & Real-Time Verified Tag */}
-        <div className="flex items-start justify-between gap-3 pb-2.5 border-b border-slate-100">
+        {/* Top Hero: Current Temperature, Condition, Élő radar button & Real-Time Verified Tag */}
+        <div className="flex items-start justify-between gap-2.5 pb-2 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mb-0.5">
               <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
@@ -97,15 +99,23 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
                 {current.weightedTemperature.toFixed(1)}°C
               </span>
               <div className="flex flex-col">
-                <span className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-1.5">
-                  <WeatherIcon name={current.weatherIcon} className="w-4 h-4 text-sky-600" />
-                  {current.weatherDescription}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-0.5">
-                  {dailySummary
-                    ? `Ma mért szélsőértékek: ${dailySummary.tempMin}° / ${dailySummary.tempMax}°`
-                    : `Helyi ingadozás: ±${(current.tempSpread / 2).toFixed(1)}°`}
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-1.5">
+                    <WeatherIcon name={current.weatherIcon} className="w-4 h-4 text-sky-600" />
+                    {current.weatherDescription}
+                  </span>
+                  {onOpenRadar && (
+                    <button
+                      type="button"
+                      onClick={onOpenRadar}
+                      className="bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 text-xs font-medium px-2.5 py-1 rounded-full border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      title="Élő csapadékradar megnyitása"
+                    >
+                      <Radar className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                      <span>Élő radar</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -113,7 +123,7 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
           {/* Verified Measurement Badge */}
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-2xs shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="hidden xs:inline">Valós idejű</span> tényadatok
+            <span className="hidden xs:inline">Valós idejű</span> Mért értékek
           </div>
         </div>
 

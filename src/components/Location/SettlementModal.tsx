@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { GeoLocation } from '../../types/weather';
 import { POPULAR_LOCATIONS, searchCity } from '../../api/openMeteo';
-import { Search, X, MapPin, Check, RefreshCw } from 'lucide-react';
+import { Search, X, MapPin, Check, RefreshCw, Navigation, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export interface SettlementModalProps {
@@ -20,6 +20,8 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<GeoLocation[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [geoLoading, setGeoLoading] = useState<boolean>(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Focus input when modal opens
@@ -77,6 +79,92 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
     };
   }, [query]);
 
+  const handleGeolocation = () => {
+    if (!navigator.geolocation) {
+      setGeoError('A böngésző nem támogatja a helymeghatározást.');
+      return;
+    }
+
+    setGeoLoading(true);
+    setGeoError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        try {
+          let settlementName = '';
+          let county = '';
+
+          // 1. Attempt reverse geocoding via OpenStreetMap nominatim
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12&addressdetails=1`,
+              { headers: { 'Accept-Language': 'hu' } }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              settlementName =
+                data.address?.city ||
+                data.address?.town ||
+                data.address?.village ||
+                data.address?.municipality ||
+                data.name ||
+                '';
+              county = data.address?.county || data.address?.state || '';
+            }
+          } catch {
+            // Ignore network errors, fallback to closest city
+          }
+
+          // 2. Fallback to nearest city in POPULAR_LOCATIONS
+          if (!settlementName) {
+            let closest = POPULAR_LOCATIONS[0]!;
+            let minDist = Infinity;
+            for (const loc of POPULAR_LOCATIONS) {
+              const d = Math.hypot(loc.latitude - lat, loc.longitude - lon);
+              if (d < minDist) {
+                minDist = d;
+                closest = loc;
+              }
+            }
+            settlementName = closest.name;
+            county = closest.admin1 || '';
+          }
+
+          const gpsLocation: GeoLocation = {
+            id: Math.round(Math.abs(lat * 1000 + lon * 1000)),
+            name: settlementName,
+            latitude: Number(lat.toFixed(4)),
+            longitude: Number(lon.toFixed(4)),
+            elevation: Math.round(pos.coords.altitude || 110),
+            country: 'Magyarország',
+            countryCode: 'HU',
+            admin1: county,
+            timezone: 'Europe/Budapest',
+          };
+
+          onSelectLocation(gpsLocation);
+          onClose();
+        } catch {
+          setGeoError('Nem sikerült feldolgozni a helyadatokat.');
+        } finally {
+          setGeoLoading(false);
+        }
+      },
+      (err) => {
+        setGeoLoading(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          setGeoError('A helymeghatározás nem engedélyezett.');
+        } else {
+          setGeoError('Nem sikerült meghatározni a pozíciót.');
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
   const displayedResults = query.trim().length < 2 ? [] : results;
 
   if (!isOpen) return null;
@@ -119,15 +207,53 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               aria-label="Bezárás"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Search Input Box */}
-          <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+          {/* Top Action Item & Search Input Box */}
+          <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2">
+            {/* GPS Geolocation Action Button */}
+            <button
+              type="button"
+              onClick={handleGeolocation}
+              disabled={geoLoading}
+              className="w-full py-2.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-100/80 border border-sky-200 text-sky-900 text-xs sm:text-sm font-bold flex items-center justify-between transition-all shadow-2xs hover:shadow-xs cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-xs">
+                  {geoLoading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Navigation className="w-4 h-4 fill-white" />
+                  )}
+                </div>
+                <div className="text-left">
+                  <div className="font-extrabold text-slate-900 leading-tight">
+                    Pozíció meghatározása (GPS)
+                  </div>
+                  <div className="text-[10px] text-sky-700 font-normal">
+                    Helyi időjárás betöltése koordináták alapján
+                  </div>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-sky-700 bg-white px-2 py-0.5 rounded-md border border-sky-200 shadow-2xs">
+                {geoLoading ? 'Keresés...' : 'GPS'}
+              </span>
+            </button>
+
+            {/* Geolocation Inline Error Notice */}
+            {geoError && (
+              <div className="py-1.5 px-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span className="text-[11px] font-medium">{geoError}</span>
+              </div>
+            )}
+
+            {/* Search Input Box */}
             <div className="relative flex items-center">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
               <input

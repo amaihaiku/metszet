@@ -20,6 +20,7 @@ import {
 import { SourcesCarousel } from './components/SourcesView/SourcesCarousel';
 import { OrientationLock } from './components/Orientation/OrientationLock';
 import { SettlementModal } from './components/Location/SettlementModal';
+import { RadarModal } from './components/Radar/RadarModal';
 import appIcon from './assets/app-icon.png';
 import {
   RefreshCw,
@@ -37,6 +38,7 @@ export function App() {
   const [horizon, setHorizon] = useState<TimeHorizon>('most');
   const [showSources, setShowSources] = useState<boolean>(false);
   const [showSettlementModal, setShowSettlementModal] = useState<boolean>(false);
+  const [showRadar, setShowRadar] = useState<boolean>(false);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
   const [hourlyPoints, setHourlyPoints] = useState<HourlyConsensusPoint[]>([]);
@@ -140,6 +142,13 @@ export function App() {
         onSelectLocation={handleSelectLocation}
       />
 
+      {/* Live RainViewer Precipitation Radar Modal */}
+      <RadarModal
+        isOpen={showRadar}
+        onClose={() => setShowRadar(false)}
+        location={selectedLocation}
+      />
+
       {/* 3. Main Body Container (fits single screen height without vertical scrolling) */}
       <main className="flex-1 min-h-0 flex flex-col justify-between p-2 sm:p-2.5 max-w-4xl mx-auto w-full overflow-hidden">
         {showSources ? (
@@ -207,6 +216,7 @@ export function App() {
                 currentHourIndex={currentHourIndex}
                 astronomy={astronomy}
                 stationMetadata={stationMetadata}
+                onOpenRadar={() => setShowRadar(true)}
               />
             )}
 
