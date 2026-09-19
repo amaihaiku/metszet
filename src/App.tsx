@@ -114,7 +114,7 @@ export function App() {
             alt="Metszet Icon"
             className="w-[50px] h-[50px] sm:w-[56px] sm:h-[56px] object-contain shrink-0"
           />
-          <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 m-0 leading-none">
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 m-0 leading-none">
             {HU_TEXTS.appTitle}
           </h1>
         </div>
@@ -154,6 +154,7 @@ export function App() {
             locationName={selectedLocation.name}
             currentHourIndex={currentHourIndex}
             astronomy={astronomy}
+            stationMetadata={stationMetadata}
           />
         ) : (
           /* Primary Summary Dashboard (Single Viewport) */

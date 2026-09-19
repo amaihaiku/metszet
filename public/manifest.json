@@ -1,6 +1,6 @@
 {
-  "name": "Metszet",
-  "short_name": "Metszet",
+  "name": "METSZET",
+  "short_name": "METSZET",
   "description": "Meteorológiai konszenzus és bizonytalansági előrejelzés",
   "start_url": "./",
   "scope": "./",

@@ -191,25 +191,25 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
           </div>
         </div>
 
-        {/* Station Metadata & Authentication Panel at Bottom */}
-        <div className="pt-2 border-t border-slate-100 bg-slate-50/50 -mx-3 -mb-3 sm:-mx-4 sm:-mb-4 p-2.5 sm:p-3 rounded-b-2xl">
+        {/* Station Metadata & Authentication Panel at Bottom (strictly nested, no overflow) */}
+        <div className="pt-2 border-t border-slate-100 bg-slate-50/70 p-2 sm:p-2.5 rounded-xl shrink-0">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Radio className="w-3.5 h-3.5 text-emerald-600" />
+            <Radio className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <h4 className="text-[11px] font-bold text-slate-800">Mérőállomás és hitelesítési adatok</h4>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 text-slate-600">
+            <div className="flex-1 min-w-[110px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
               <div className="text-[10px] font-semibold uppercase text-slate-400">Mérés forrása</div>
-              <div className="font-bold text-slate-800 text-xs mt-0.5 flex items-center gap-1">
+              <div className="font-bold text-slate-800 text-[11px] mt-0.5 flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                 <span className="truncate">{stationMetadata?.source || 'DWD / HungaroMet / ECMWF'}</span>
               </div>
             </div>
 
-            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
+            <div className="flex-1 min-w-[120px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
               <div className="text-[10px] font-semibold uppercase text-slate-400">Állomás helye</div>
-              <div className="font-bold text-slate-800 text-xs mt-0.5 truncate">
+              <div className="font-bold text-slate-800 text-[11px] mt-0.5 truncate">
                 {stationMetadata?.stationName || `${locationName} automata állomás`}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5 truncate">
@@ -217,14 +217,14 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
               </div>
             </div>
 
-            <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-2xs">
+            <div className="flex-1 min-w-[100px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
               <div className="text-[10px] font-semibold uppercase text-slate-400">Pontos mérésidő</div>
-              <div className="font-bold text-slate-800 text-xs mt-0.5 flex items-center gap-1.5">
+              <div className="font-bold text-slate-800 text-[11px] mt-0.5 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-sm font-extrabold text-slate-900 tabular-nums">
+                <span className="text-xs sm:text-sm font-extrabold text-slate-900 tabular-nums">
                   {stationMetadata?.timestamp || '16:15'}
                 </span>
-                <span className="text-[11px] text-slate-500 font-normal">óra</span>
+                <span className="text-[10px] text-slate-500 font-normal">óra</span>
               </div>
             </div>
           </div>
@@ -328,9 +328,8 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
       {/* Selected Hour Timestamp Indicator Bar */}
       <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-slate-600">
         <span className="flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-sky-600" />
-          <span className="text-slate-500 font-normal">Kiválasztott óra:</span>
-          <strong className="text-slate-900 font-extrabold">{formatFullDateTime(selectedPt.time)}</strong>
+          <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+          <strong className="text-slate-900 font-extrabold tabular-nums">{formatFullDateTime(selectedPt.time)}</strong>
         </span>
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold border border-sky-200">
           <WeatherIcon name={selectedPt.weatherIcon} className="w-3 h-3 text-sky-600" />

@@ -3,7 +3,7 @@
  */
 
 export const HU_TEXTS = {
-  appTitle: 'Metszet',
+  appTitle: 'METSZET',
   footer: '2026 AmaihAIku',
 
   // Time Horizons

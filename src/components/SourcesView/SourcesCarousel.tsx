@@ -5,15 +5,14 @@ import type {
   AstronomyInfo,
   DailyConsensusSummary,
   HourlyConsensusPoint,
+  StationMetadata,
   WeatherModel,
 } from '../../types/weather';
 import {
   SUPPORTED_MODELS,
   WEATHER_MODEL_REGISTRY,
 } from '../../types/weather';
-import {
-  calculateFrontEffect,
-} from '../../lib/aggregator';
+import { calculateFrontEffect, getWeatherCodeDetails } from '../../lib/aggregator';
 import {
   OMNI_GROUP,
   connectOmniGroup,
@@ -22,7 +21,6 @@ import {
 } from '../../lib/echartsOptions';
 import { AstroFrontStrip } from '../Common/AstroFrontStrip';
 import { WeatherIcon } from '../Common/WeatherIcon';
-import { getWeatherCodeDetails } from '../../lib/aggregator';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -35,6 +33,8 @@ import {
   Layers,
   MapPin,
   Clock,
+  Radio,
+  CheckCircle2,
 } from 'lucide-react';
 import { HU_TEXTS } from '../../lib/i18n';
 import type { TimeHorizon } from '../Controls/ViewControls';
@@ -49,6 +49,7 @@ export interface SourcesCarouselProps {
   locationName?: string;
   currentHourIndex?: number;
   astronomy?: AstronomyInfo;
+  stationMetadata?: StationMetadata;
 }
 
 export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
@@ -59,6 +60,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
   locationName = 'Budapest',
   currentHourIndex = 0,
   astronomy,
+  stationMetadata,
 }) => {
   const [currentModelIndex, setCurrentModelIndex] = useState<number>(0);
   const [selectedHourIndex, setSelectedHourIndex] = useState<number>(0);
@@ -158,54 +160,75 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
 
   return (
     <div
-      className="h-full max-h-full flex flex-col justify-between py-1 sm:py-2 px-2.5 sm:px-4 max-w-xl mx-auto w-full select-none overflow-hidden"
+      className="h-full flex flex-col justify-between gap-2 overflow-hidden w-full select-none"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* 1. Top Header Bar: Back Button, Location, 24h/72h Horizon Toggle, Model Counter */}
-      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 gap-2 shrink-0">
+      {/* 1. Top Navigation Bar: Back Button, Location, 24h/72h Horizon Toggle, Model Switcher */}
+      <div className="flex items-center justify-between gap-2 shrink-0 px-0.5">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer shrink-0"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-colors shadow-2xs cursor-pointer shrink-0"
         >
           <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
           <span>{HU_TEXTS.backButton}</span>
         </button>
 
-        <div className="flex items-center gap-1 text-xs text-slate-700 font-semibold truncate">
-          <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-          <span className="truncate max-w-[100px] sm:max-w-[150px]">{locationName}</span>
+        <div className="flex items-center gap-2">
+          <div className="hidden xs:flex items-center gap-1 text-xs text-slate-700 font-semibold truncate">
+            <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+            <span className="truncate max-w-[110px] sm:max-w-[160px]">{locationName}</span>
+          </div>
+
+          {/* Restricted Horizon Toggle: Only '24h' and '72h' */}
+          {onHorizonChange && (
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200/80 text-[11px] font-semibold shrink-0">
+              {(['24h', '72h'] as TimeHorizon[]).map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => onHorizonChange(h)}
+                  className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                    activeHorizon === h
+                      ? 'bg-white text-sky-700 shadow-2xs font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Restricted Horizon Toggle: Only '24h' and '72h' */}
-        {onHorizonChange && (
-          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200/80 text-[11px] font-semibold shrink-0">
-            {(['24h', '72h'] as TimeHorizon[]).map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => onHorizonChange(h)}
-                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                  activeHorizon === h
-                    ? 'bg-white text-sky-700 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {h}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-200 shrink-0 tabular-nums">
-          {currentModelIndex + 1} / {models.length}
+        {/* Carousel model switcher with Prev/Next buttons */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={prevSlide}
+            aria-label="Előző forrás"
+            className="w-7 h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 shadow-2xs flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-1 rounded-lg border border-sky-200 tabular-nums">
+            {currentModelIndex + 1} / {models.length}
+          </span>
+          <button
+            type="button"
+            onClick={nextSlide}
+            aria-label="Következő forrás"
+            className="w-7 h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 shadow-2xs flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* 2. Main Swipeable Provider Slide with Slide Parity */}
-      <div className="relative my-auto py-1 touch-pan-y flex-1 min-h-0 flex flex-col justify-center">
+      {/* 2. Full-Height Provider Slide Card (Strict Parity with ConsensusPanel) */}
+      <div className="relative flex-1 min-h-0 w-full overflow-hidden touch-pan-y">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentModelKey}
@@ -220,14 +243,14 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                 prevSlide();
               }
             }}
-            initial={{ opacity: 0, x: 25 }}
+            initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -25 }}
+            exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.18 }}
-            className="clean-card p-3 sm:p-4 relative overflow-hidden bg-white shadow-md border-t-4 cursor-grab active:cursor-grabbing flex flex-col justify-between gap-1.5"
+            className="clean-card p-3 sm:p-3.5 h-full flex flex-col justify-between bg-white border border-slate-200/90 shadow-sm overflow-hidden gap-1.5 border-t-4 cursor-grab active:cursor-grabbing"
             style={{ borderTopColor: info.color }}
           >
-            {/* Header: Provider Name, Agency, Resolution, Weight */}
+            {/* Header: Provider Name, Agency, Country, Resolution, Weight */}
             <div className="flex items-start justify-between gap-2 pb-1 border-b border-slate-100">
               <div>
                 <div className="flex items-center gap-1.5">
@@ -240,7 +263,7 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   </h3>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                  {info.agency} • {info.resolutionKm} km
+                  {info.agency} • {info.country} • {info.resolutionKm} km felbontás
                 </p>
               </div>
 
@@ -252,18 +275,18 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                   color: info.color,
                 }}
               >
-                {Math.round(info.defaultWeight * 100)}% súly
+                {Math.round(info.defaultWeight * 100)}% súlyozás
               </span>
             </div>
 
-            {/* Slide Parity: Astro & Biometeorology Strip */}
+            {/* Astro & Biometeorology Strip (Line-Art Iconography) */}
             <AstroFrontStrip
               astronomy={astronomy}
               frontEffect={dynamicFront}
             />
 
-            {/* Interactive Single Model ECharts Trend Graph with Tap/Scrub */}
-            <div className="w-full h-[115px] sm:h-[130px] relative my-0.5">
+            {/* Interactive Single-Model Forecast Chart with Tap/Scrub */}
+            <div className="w-full flex-1 min-h-[135px] max-h-[175px] relative">
               <ReactECharts
                 option={chartOption}
                 style={{ height: '100%', width: '100%' }}
@@ -313,12 +336,11 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
               />
             </div>
 
-            {/* Selected Hour Indicator Bar */}
+            {/* Timestamp & Weather Condition Indicator (without "Kiválasztott óra:" label) */}
             <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-slate-600">
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-slate-500 font-normal">Kiválasztott óra:</span>
-                <strong className="text-slate-900 font-extrabold">
+                <strong className="text-slate-900 font-extrabold tabular-nums">
                   {activeConsensusPoint ? formatFullDateTime(activeConsensusPoint.time) : '--'}
                 </strong>
               </span>
@@ -329,100 +351,110 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
             </div>
 
             {/* Synchronized 2x2 Metric Cards (Model's values at selected hour) */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5 pt-1 border-t border-slate-100 text-xs">
               {/* Card 1: Hőmérséklet */}
-              <div className="p-2 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
                 <div className="flex items-center justify-between text-slate-500 mb-0.5">
                   <span className="font-semibold text-[11px] uppercase tracking-tight">{HU_TEXTS.temperature}</span>
-                  <Thermometer className="w-3.5 h-3.5 text-sky-600" />
+                  <Thermometer className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                 </div>
-                <div className="text-base sm:text-lg font-extrabold tabular-nums text-slate-900">
+                <div className="text-lg sm:text-xl font-extrabold tabular-nums text-slate-900">
                   {activeModelPoint ? `${activeModelPoint.temperature.toFixed(1)} °C` : '--'}
                 </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">
                   Konszenzus: <strong className="text-slate-700">{consensusTemp?.toFixed(1) ?? '--'} °C</strong>
                 </div>
               </div>
 
               {/* Card 2: Eltérés a konszenzustól */}
-              <div className="p-2 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
                 <div className="flex items-center justify-between text-slate-500 mb-0.5">
                   <span className="font-semibold text-[11px] uppercase tracking-tight">Konszenzus eltérés</span>
-                  <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                  <Activity className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                 </div>
                 <div
-                  className={`text-base sm:text-lg font-extrabold tabular-nums ${
+                  className={`text-lg sm:text-xl font-extrabold tabular-nums ${
                     delta > 0 ? 'text-amber-600' : delta < 0 ? 'text-sky-600' : 'text-slate-900'
                   }`}
                 >
                   {delta > 0 ? `+${delta}` : delta} °C
                 </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">
-                  {delta > 0 ? 'Melegebb a modelleknél' : delta < 0 ? 'Hűvösebb a modelleknél' : 'Megegyezik'}
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                  {delta > 0 ? 'Melegebb a modelleknél' : delta < 0 ? 'Hűvösebb a modelleknél' : 'Azonos a modellekkel'}
                 </div>
               </div>
 
               {/* Card 3: Csapadék */}
-              <div className="p-2 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
                 <div className="flex items-center justify-between text-slate-500 mb-0.5">
                   <span className="font-semibold text-[11px] uppercase tracking-tight">{HU_TEXTS.precipitation}</span>
-                  <Droplets className="w-3.5 h-3.5 text-blue-600" />
+                  <Droplets className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 </div>
-                <div className="text-base sm:text-lg font-extrabold tabular-nums text-slate-900">
+                <div className="text-lg sm:text-xl font-extrabold tabular-nums text-slate-900">
                   {activeModelPoint ? `${activeModelPoint.precipitation.toFixed(1)} mm` : '0.0 mm'}
                 </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">
                   Felhőzet: <strong className="text-slate-700">{activeModelPoint?.cloudCover ?? 0}%</strong>
                 </div>
               </div>
 
               {/* Card 4: Szél & Légnyomás */}
-              <div className="p-2 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 flex flex-col justify-between shadow-2xs">
                 <div className="flex items-center justify-between text-slate-500 mb-0.5">
                   <span className="font-semibold text-[11px] uppercase tracking-tight">Szél & Nyomás</span>
-                  <div className="flex items-center gap-1">
-                    <Wind className="w-3 h-3 text-teal-600" />
-                    <Gauge className="w-3 h-3 text-indigo-600" />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Wind className="w-3.5 h-3.5 text-teal-600" />
+                    <Gauge className="w-3.5 h-3.5 text-indigo-600" />
                   </div>
                 </div>
-                <div className="text-base sm:text-lg font-extrabold tabular-nums text-slate-900 truncate">
+                <div className="text-lg sm:text-xl font-extrabold tabular-nums text-slate-900 truncate">
                   {activeModelPoint ? `${Math.round(activeModelPoint.windSpeed)} km/h` : '--'}
                 </div>
-                <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">
                   Légnyomás: <strong className="text-slate-700">{activeModelPoint?.pressure ? Math.round(activeModelPoint.pressure) : 1013} hPa</strong>
                 </div>
               </div>
             </div>
 
-            {/* Model Description */}
-            <div className="pt-1 border-t border-slate-100 text-[10px] text-slate-500 truncate">
-              {info.description}
+            {/* 6. Measurement / Forecast Timestamp & Source Container at Bottom (strictly nested) */}
+            <div className="pt-2 border-t border-slate-100 bg-slate-50/70 p-2 sm:p-2.5 rounded-xl shrink-0">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Radio className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <h4 className="text-[11px] font-bold text-slate-800">Modell-adatok és forrásinformáció</h4>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-1.5 text-slate-600 text-xs">
+                <div className="flex-1 min-w-[120px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400">Modell és felbontás</div>
+                  <div className="font-bold text-slate-800 text-[11px] mt-0.5 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-sky-600 shrink-0" />
+                    <span className="truncate">{info.shortName} ({info.resolutionKm} km)</span>
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-[130px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400">Szolgáltató / Hatáskör</div>
+                  <div className="font-bold text-slate-800 text-[11px] mt-0.5 truncate">
+                    {info.agency}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-[100px] bg-white py-1.5 px-2 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-semibold uppercase text-slate-400">Adatfrissítés</div>
+                  <div className="font-bold text-slate-800 text-[11px] mt-0.5 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                    <span className="tabular-nums font-extrabold text-slate-900">{stationMetadata?.timestamp || '16:15'}</span>
+                    <span className="text-[10px] text-slate-500 font-normal">óra</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         </AnimatePresence>
-
-        {/* Navigation Arrows */}
-        <button
-          type="button"
-          onClick={prevSlide}
-          aria-label="Előző forrás"
-          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2.5 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20 cursor-pointer"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={nextSlide}
-          aria-label="Következő forrás"
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2.5 w-7 h-7 rounded-full bg-white border border-slate-200 shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all z-20 cursor-pointer"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
       </div>
 
-      {/* 3. Slide Indicators & Back Button */}
-      <div className="pt-1.5 border-t border-slate-200 flex flex-col items-center gap-1.5 shrink-0">
+      {/* 3. Bottom Action Bar: Dot Indicators & Return Button (matching main view button) */}
+      <div className="w-full pt-1 shrink-0 flex flex-col items-center gap-1.5">
         {/* Dot indicators */}
         <div className="flex items-center gap-1.5">
           {models.map((m, idx) => {
@@ -435,21 +467,21 @@ export const SourcesCarousel: React.FC<SourcesCarouselProps> = ({
                 onClick={() => setCurrentModelIndex(idx)}
                 aria-label={modelInfo.shortName}
                 className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                  isCurrent ? 'w-5 bg-sky-600' : 'w-1.5 bg-slate-300 hover:bg-slate-400'
+                  isCurrent ? 'w-6 bg-sky-600' : 'w-1.5 bg-slate-300 hover:bg-slate-400'
                 }`}
               />
             );
           })}
         </div>
 
-        {/* Back Button */}
+        {/* Big Return Button */}
         <button
           type="button"
           onClick={onBack}
-          className="w-full py-1.5 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300 text-slate-700 font-semibold text-xs flex items-center justify-center gap-2 shadow-2xs hover:shadow transition-all cursor-pointer"
+          className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300 text-slate-700 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs hover:shadow transition-all group cursor-pointer"
         >
-          <Layers className="w-3.5 h-3.5 text-slate-500" />
-          <span>Vissza a konszenzusos nézetbe</span>
+          <Layers className="w-4 h-4 text-sky-600 transition-transform group-hover:scale-105" />
+          <span className="font-semibold text-slate-800">Vissza a konszenzusos nézetbe</span>
         </button>
       </div>
     </div>
