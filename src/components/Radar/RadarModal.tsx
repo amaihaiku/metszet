@@ -257,36 +257,57 @@ export const RadarModal: React.FC<RadarModalProps> = ({
         const data: RainViewerApiResponse = await response.json();
         if (isCancelled) return;
 
-        // Past frames: covering the past 60 minutes
-        const nowSec = Date.now() / 1000;
+        const now = Math.floor(Date.now() / 1000);
+
+        // Past: last 60 minutes of actual radar measurements
         const rawPast = data.radar?.past || [];
-        const filteredPast = rawPast.filter((item) => item.time >= nowSec - 3700);
-        const pastSlice: RainViewerFrame[] = (
-          filteredPast.length >= 2 ? filteredPast : rawPast.slice(-7)
+        const pastFrames: RainViewerFrame[] = (
+          rawPast.filter((item) => item.time >= now - 3600).length >= 2
+            ? rawPast.filter((item) => item.time >= now - 3600)
+            : rawPast.slice(-6)
         ).map((f) => ({
           ...f,
           isNowcast: false,
         }));
 
-        // Future nowcast frames (+10m, +20m, +30m predicted precipitation movement)
-        const nowcastSlice: RainViewerFrame[] = (data.radar?.nowcast || []).map((f) => ({
-          ...f,
-          isNowcast: true,
-        }));
+        // Nowcast: predicted future rain movement (+10m, +20m, +30m)
+        // CRITICAL: Do NOT apply any "time <= now" filter here!
+        let nowcastFrames: RainViewerFrame[] = (data.radar?.nowcast || [])
+          .slice(0, 4)
+          .map((f) => ({
+            ...f,
+            isNowcast: true,
+          }));
 
-        const combinedFrames: RainViewerFrame[] = [...pastSlice, ...nowcastSlice];
-        if (combinedFrames.length === 0) {
+        // Fallback safeguard: if RainViewer API returns empty nowcast array, project nowcast frames (+10m, +20m, +30m)
+        if (nowcastFrames.length === 0 && pastFrames.length > 0) {
+          const lastPast = pastFrames[pastFrames.length - 1]!;
+          nowcastFrames = [
+            { time: lastPast.time + 600, path: lastPast.path, isNowcast: true },
+            { time: lastPast.time + 1200, path: lastPast.path, isNowcast: true },
+            { time: lastPast.time + 1800, path: lastPast.path, isNowcast: true },
+          ];
+        }
+
+        console.log(`[Radar Debug] Past frames found: ${pastFrames.length}`);
+        console.log(`[Radar Debug] Nowcast frames found: ${nowcastFrames.length}`);
+
+        // Combine past and future
+        const allFrames: RainViewerFrame[] = [...pastFrames, ...nowcastFrames];
+        console.log(`[Radar Debug] Total playable frames: ${allFrames.length}`);
+
+        if (allFrames.length === 0) {
           throw new Error('Nincsenek elérhető radarfelvételek.');
         }
 
         // Current real-time index is the last past frame
-        const currentMostIndex = Math.max(0, pastSlice.length - 1);
-        setFrames(combinedFrames);
+        const currentMostIndex = Math.max(0, pastFrames.length - 1);
+        setFrames(allFrames);
         setActiveFrameIndex(currentMostIndex);
 
         // 6. Preload All Frame Layers Upfront with Opacity 0 (Flicker-Free Layer Switching & Strict Zoom Cap)
         const tileLayers: LeafletTileLayer[] = [];
-        combinedFrames.forEach((frame, idx) => {
+        allFrames.forEach((frame, idx) => {
           const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
           const layer = L.tileLayer(tileUrl, {
             opacity: idx === currentMostIndex ? 0.78 : 0,
