@@ -101,18 +101,18 @@ export function App() {
   const currentPoint = hourlyPoints[currentHourIndex] || hourlyPoints[0];
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between overflow-hidden bg-white text-slate-900 select-none">
+    <div className="app-viewport bg-white text-slate-900 select-none">
       {/* 1. Orientation Lock Overlay (Triggers when mobile is in landscape) */}
       <OrientationLock />
 
       {/* 2. Top Header: App Icon & Title, and Searchable Settlement Button */}
-      <header className="h-16 min-h-16 px-3.5 sm:px-5 flex items-center justify-between border-b border-slate-200/70 bg-white/95 backdrop-blur-md z-40 shrink-0">
-        {/* Branding: 1.5x scaled icon (~52-56px), bare on white background with optical alignment */}
-        <div className="flex items-center gap-3">
+      <header className="h-14 sm:h-16 min-h-14 sm:min-h-16 px-3.5 sm:px-5 flex items-center justify-between border-b border-slate-200/70 bg-white/95 backdrop-blur-md z-40 shrink-0">
+        {/* Branding: 1.5x scaled icon (~50-56px), bare on white background with optical alignment */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <img
             src={appIcon}
             alt="Metszet Icon"
-            className="w-[50px] h-[50px] sm:w-[56px] sm:h-[56px] object-contain shrink-0"
+            className="w-[46px] h-[46px] sm:w-[54px] sm:h-[54px] object-contain shrink-0"
           />
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 m-0 leading-none">
             {HU_TEXTS.appTitle}
@@ -141,7 +141,7 @@ export function App() {
       />
 
       {/* 3. Main Body Container (fits single screen height without vertical scrolling) */}
-      <main className="flex-1 min-h-0 flex flex-col justify-between p-2.5 sm:p-3.5 max-w-4xl mx-auto w-full overflow-hidden">
+      <main className="flex-1 min-h-0 flex flex-col justify-between p-2 sm:p-2.5 max-w-4xl mx-auto w-full overflow-hidden">
         {showSources ? (
           /* Dedicated Sources Carousel View (with touch swipe & synced horizon) */
           <SourcesCarousel
