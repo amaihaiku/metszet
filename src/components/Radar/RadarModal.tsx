@@ -194,24 +194,24 @@ export const RadarModal: React.FC<RadarModalProps> = ({
           teardownMap();
         }
 
-        // 1. Initialize Leaflet Map centered on location coordinates (Locked zoom: 7 to 10)
+        // 1. Initialize Leaflet Map centered on location coordinates (Strict zoom bounds: 4 to 6)
         const map = L.map(mapContainerRef.current, {
           center: [location.latitude, location.longitude],
-          zoom: 8,
-          minZoom: 7,
-          maxZoom: 10,
-          zoomControl: false,       // disable [+] [-] zoom buttons
-          scrollWheelZoom: false,  // prevent accidental mouse scroll zooming
-          doubleClickZoom: false,  // prevent accidental double-click zooming
-          touchZoom: false,        // prevent pinch-to-zoom on mobile
+          zoom: 6,                 // Default zoom level (covers all of Hungary)
+          minZoom: 4,              // Allows zooming out to Central Europe
+          maxZoom: 6,              // HARD CAP: prevents zooming deeper than the free tier limit
+          zoomControl: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          touchZoom: true,
           attributionControl: false,
         });
         mapInstanceRef.current = map;
 
-        // 2. Standard Clean OpenStreetMap Basemap (Un-inverted Light Mode, locked zoom bounds)
+        // 2. Standard Clean OpenStreetMap Basemap (Un-inverted Light Mode, zoom bounds 4 to 6)
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          minZoom: 7,
-          maxZoom: 10,
+          minZoom: 4,
+          maxZoom: 6,
           attribution: '&copy; OpenStreetMap',
         }).addTo(map);
 
@@ -284,7 +284,7 @@ export const RadarModal: React.FC<RadarModalProps> = ({
         setFrames(combinedFrames);
         setActiveFrameIndex(currentMostIndex);
 
-        // 6. Preload All Frame Layers Upfront with Opacity 0 (Flicker-Free Layer Switching & Zoom Safeguard)
+        // 6. Preload All Frame Layers Upfront with Opacity 0 (Flicker-Free Layer Switching & Strict Zoom Cap)
         const tileLayers: LeafletTileLayer[] = [];
         combinedFrames.forEach((frame, idx) => {
           const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
@@ -292,9 +292,9 @@ export const RadarModal: React.FC<RadarModalProps> = ({
             opacity: idx === currentMostIndex ? 0.78 : 0,
             zIndex: 10 + idx,
             tileSize: 256,
-            maxNativeZoom: 11,
-            maxZoom: 10,
-            minZoom: 7,
+            maxNativeZoom: 6,
+            maxZoom: 6,
+            minZoom: 4,
           });
           layer.addTo(map);
           tileLayers.push(layer);
@@ -393,10 +393,13 @@ export const RadarModal: React.FC<RadarModalProps> = ({
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-slate-900/40 backdrop-blur-xs select-none">
       {/* Modal Card (Light Theme) */}
       <div className="relative w-full h-[92dvh] sm:h-[84vh] max-w-4xl rounded-2xl overflow-hidden flex flex-col bg-white text-slate-800 shadow-2xl border border-slate-200/90">
-        {/* Scoped CSS for 250ms smooth crossfade between tile layers */}
+        {/* Scoped CSS for 250ms smooth crossfade and zoom button positioning */}
         <style>{`
           .radar-leaflet-container .leaflet-layer {
             transition: opacity 250ms ease-in-out !important;
+          }
+          .radar-leaflet-container .leaflet-top.leaflet-left {
+            top: 56px;
           }
         `}</style>
 
