@@ -109,10 +109,10 @@ export const ConsensusPanel: React.FC<ConsensusPanelProps> = ({
                       type="button"
                       onClick={onOpenRadar}
                       className="bg-slate-100/90 hover:bg-slate-200/80 text-slate-700 text-xs font-medium px-2.5 py-1 rounded-full border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                      title="Élő csapadékradar megnyitása"
+                      title="Csapadékradar megnyitása"
                     >
                       <Radar className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                      <span>Élő radar</span>
+                      <span>Radar</span>
                     </button>
                   )}
                 </div>

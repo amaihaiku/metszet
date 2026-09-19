@@ -194,23 +194,24 @@ export const RadarModal: React.FC<RadarModalProps> = ({
           teardownMap();
         }
 
-        // 1. Initialize Leaflet Map centered on location coordinates
+        // 1. Initialize Leaflet Map centered on location coordinates (Locked zoom: 7 to 10)
         const map = L.map(mapContainerRef.current, {
           center: [location.latitude, location.longitude],
           zoom: 8,
-          minZoom: 6,
-          maxZoom: 13,
-          zoomControl: false,
+          minZoom: 7,
+          maxZoom: 10,
+          zoomControl: false,       // disable [+] [-] zoom buttons
+          scrollWheelZoom: false,  // prevent accidental mouse scroll zooming
+          doubleClickZoom: false,  // prevent accidental double-click zooming
+          touchZoom: false,        // prevent pinch-to-zoom on mobile
           attributionControl: false,
         });
         mapInstanceRef.current = map;
 
-        // Zoom control placed neatly in bottom-right
-        L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-        // 2. Standard Clean OpenStreetMap Basemap (Un-inverted Light Mode)
+        // 2. Standard Clean OpenStreetMap Basemap (Un-inverted Light Mode, locked zoom bounds)
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
+          minZoom: 7,
+          maxZoom: 10,
           attribution: '&copy; OpenStreetMap',
         }).addTo(map);
 
@@ -283,7 +284,7 @@ export const RadarModal: React.FC<RadarModalProps> = ({
         setFrames(combinedFrames);
         setActiveFrameIndex(currentMostIndex);
 
-        // 6. Preload All Frame Layers Upfront with Opacity 0 (Flicker-Free Layer Switching)
+        // 6. Preload All Frame Layers Upfront with Opacity 0 (Flicker-Free Layer Switching & Zoom Safeguard)
         const tileLayers: LeafletTileLayer[] = [];
         combinedFrames.forEach((frame, idx) => {
           const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
@@ -291,6 +292,9 @@ export const RadarModal: React.FC<RadarModalProps> = ({
             opacity: idx === currentMostIndex ? 0.78 : 0,
             zIndex: 10 + idx,
             tileSize: 256,
+            maxNativeZoom: 11,
+            maxZoom: 10,
+            minZoom: 7,
           });
           layer.addTo(map);
           tileLayers.push(layer);
@@ -396,22 +400,27 @@ export const RadarModal: React.FC<RadarModalProps> = ({
           }
         `}</style>
 
-        {/* 1. Streamlined Minimal Header Bar (No title text, no location name, only close & refresh) */}
-        <div className="px-3 py-1.5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0 z-20">
-          <button
-            type="button"
-            onClick={() => setRefreshKey((k) => k + 1)}
-            title="Radarképek frissítése"
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-sky-600' : ''}`} />
-          </button>
+        {/* 1. Modal Header Bar: Radar title opposite close button */}
+        <div className="px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0 z-20">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-slate-800 tracking-tight">
+              Radar
+            </h3>
+            <button
+              type="button"
+              onClick={() => setRefreshKey((k) => k + 1)}
+              title="Radarképek frissítése"
+              className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-600' : ''}`} />
+            </button>
+          </div>
 
           <button
             type="button"
             onClick={onClose}
             aria-label="Bezárás"
-            className="text-slate-400 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
